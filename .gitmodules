@@ -1,0 +1,3 @@
+[submodule "wepoll"]
+	path = wepoll
+	url = https://github.com/piscisaureus/wepoll
