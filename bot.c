@@ -5,19 +5,18 @@
 #include <string.h>
 #include <sys/epoll.h>
 
-#define UNUSED(x) (void)(x)
-#define DEFAULT_BUFFER_CAPACITY (16384)
+#define BUFFER_DEFAULT_CAPACITY (16384)
 
 #define buffer_append(buffer, chunk, chunk_size)                               \
     do {                                                                       \
-        if ((buffer)->length + chunk_size + 1 > (buffer)->capacity) {          \
+        if ((buffer)->length + chunk_size > (buffer)->capacity) {              \
             size_t new_capacity = (buffer)->capacity == 0                      \
-                                      ? DEFAULT_BUFFER_CAPACITY                \
+                                      ? BUFFER_DEFAULT_CAPACITY                \
                                       : (buffer)->capacity;                    \
-            while ((buffer)->length + chunk_size + 1 > new_capacity) {         \
+            while ((buffer)->length + chunk_size > new_capacity) {             \
                 new_capacity *= 2;                                             \
             }                                                                  \
-            char *ptr = realloc((buffer)->data, new_capacity);                 \
+            uint8_t *ptr = realloc((buffer)->data, new_capacity);              \
             if (!ptr) {                                                        \
                 fprintf(stderr, "error: out of memory");                       \
                 exit(1);                                                       \
@@ -27,7 +26,6 @@
         }                                                                      \
         memcpy(&((buffer)->data[(buffer)->length]), chunk, chunk_size);        \
         (buffer)->length += chunk_size;                                        \
-        (buffer)->data[(buffer)->length] = '\0';                               \
     } while (0);
 
 #define CURLOPT_CONNECT_ONLY_HEADERS (2L)
@@ -37,7 +35,7 @@ typedef struct {
 } SocketContext;
 
 typedef struct {
-    char *data;
+    uint8_t *data;
     size_t length;
     size_t capacity;
     struct curl_slist *headers;
@@ -46,6 +44,8 @@ typedef struct {
 } RequestContext;
 
 static int timer_callback(CURLM *multi, long timeout_ms, void *userp) {
+    (void)multi;
+
     MuseBot *bot = (MuseBot *)userp;
     bot->timeout_ms = timeout_ms;
     return 0;
@@ -53,7 +53,7 @@ static int timer_callback(CURLM *multi, long timeout_ms, void *userp) {
 
 int socket_callback(CURL *curl, curl_socket_t socket, int action, void *userp,
                     void *socketp) {
-    UNUSED(curl);
+    (void)curl;
 
     MuseBot *bot = (MuseBot *)userp;
     SocketContext *ctx = (SocketContext *)socketp;
@@ -118,8 +118,8 @@ static void handle_multi_messages(MuseBot *bot) {
                 if (ctx) {
                     MuseResponse res = {0};
                     res.result = msg->data.result;
-                    res.data = ctx->data ? ctx->data : "";
-                    res.len = ctx->length;
+                    res.data = ctx->data;
+                    res.length = ctx->length;
 
                     curl_easy_getinfo(msg->easy_handle, CURLINFO_RESPONSE_CODE,
                                       &res.status);
@@ -176,11 +176,17 @@ static void drain_ws_messages(MuseBot *bot) {
             break;
         }
 
-        if (rlen > 0) {
+        bool is_data = (meta->flags & (CURLWS_TEXT | CURLWS_BINARY));
+        bool is_cont = (meta->flags & CURLWS_CONT);
+
+        if (is_data && rlen > 0) {
             buffer_append(&bot->current_message, chunk, rlen);
+        } else {
+            // TODO: Handle pings/pongs/close frames
         }
 
-        if (meta->bytesleft == 0) {
+        // https://curl.se/libcurl/c/curl_ws_meta.html#CURLWSCONT
+        if (is_data && !is_cont) {
             if (bot->ws_callbacks.on_message &&
                 bot->current_message.length > 0) {
                 bot->ws_callbacks.on_message(bot, bot->current_message.data,
@@ -203,8 +209,7 @@ void bot_poll(MuseBot *bot, int64_t default_timeout_ms) {
         epoll_wait(bot->epfd, events, sizeof(events) / sizeof(events[0]),
                    (int32_t)wait_ms);
 
-    // Convert epoll events to curl actions
-    if (num_fds > 0) {
+    if (num_fds > 0) { // Convert epoll events to curl actions
         for (int i = 0; i < num_fds; i++) {
             SocketContext *ctx = (SocketContext *)events[i].data.ptr;
             int action = (events[i].events & EPOLLIN ? CURL_CSELECT_IN : 0) |
@@ -212,8 +217,7 @@ void bot_poll(MuseBot *bot, int64_t default_timeout_ms) {
             curl_multi_socket_action(bot->multi, ctx->sockfd, action,
                                      &bot->running_handles);
         }
-        // epoll timeout handling
-    } else {
+    } else { // epoll timeout handling
         curl_multi_socket_action(bot->multi, CURL_SOCKET_TIMEOUT, 0,
                                  &bot->running_handles);
     }
@@ -256,13 +260,12 @@ void bot_ws_open(MuseBot *bot, const char *url, MuseWSCallbacks cbs) {
                              &bot->running_handles);
 }
 
-CURLcode bot_ws_send(MuseBot *bot, const char *text) {
+CURLcode bot_ws_send(MuseBot *bot, const uint8_t *data, size_t length) {
     if (!bot->ws_handshake_done)
         return CURLE_COULDNT_CONNECT;
 
     size_t sent;
-    return curl_ws_send(bot->ws_easy, text, strlen(text), &sent, 0,
-                        CURLWS_TEXT);
+    return curl_ws_send(bot->ws_easy, data, length, &sent, 0, CURLWS_TEXT);
 }
 
 static size_t http_write_callback(void *data, size_t size, size_t nmemb,
@@ -294,9 +297,9 @@ void bot_http_get(MuseBot *bot, const char *url, MuseHTTPCallback on_done,
     curl_multi_add_handle(bot->multi, easy);
 }
 
-void bot_http_post(MuseBot *bot, const char *url, const char *body,
-                   const char *content_type, MuseHTTPCallback on_done,
-                   void *user_data) {
+void bot_http_post(MuseBot *bot, const char *url, const uint8_t *body,
+                   size_t content_length, const char *content_type,
+                   MuseHTTPCallback on_done, void *user_data) {
     CURL *easy = curl_easy_init();
     RequestContext *ctx = calloc(1, sizeof(RequestContext));
     ctx->on_done = on_done;
@@ -309,6 +312,7 @@ void bot_http_post(MuseBot *bot, const char *url, const char *body,
     curl_easy_setopt(easy, CURLOPT_URL, url);
     curl_easy_setopt(easy, CURLOPT_HTTPHEADER, ctx->headers);
     curl_easy_setopt(easy, CURLOPT_POSTFIELDS, body);
+    curl_easy_setopt(easy, CURLOPT_POSTFIELDSIZE, (long)content_length);
     curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, http_write_callback);
     curl_easy_setopt(easy, CURLOPT_WRITEDATA, ctx);
     curl_easy_setopt(easy, CURLOPT_PRIVATE, ctx);
@@ -321,7 +325,6 @@ void bot_destroy(MuseBot *bot) {
         return;
 
     // Clean up all remaining requests
-    int num_handles;
     CURL **handles = curl_multi_get_handles(bot->multi);
     if (handles) {
         for (int i = 0; handles[i]; i++) {
@@ -334,8 +337,17 @@ void bot_destroy(MuseBot *bot) {
             if (ptr) {
                 request_cleanup((RequestContext *)ptr);
             }
+
+            curl_multi_remove_handle(bot->multi, handles[i]);
+            curl_easy_cleanup(handles[i]);
         }
         curl_free(handles);
+    }
+
+    if (bot->ws_easy) {
+        curl_multi_remove_handle(bot->multi, bot->ws_easy);
+        curl_easy_cleanup(bot->ws_easy);
+        bot->ws_easy = NULL;
     }
 
     curl_multi_cleanup(bot->multi);

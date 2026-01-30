@@ -16,13 +16,14 @@ typedef struct MuseBot MuseBot;
 
 typedef struct {
     void (*on_connect)(struct MuseBot *bot);
-    void (*on_message)(struct MuseBot *bot, const char *text, size_t len);
+    void (*on_message)(struct MuseBot *bot, const uint8_t *data, size_t length);
 } MuseWSCallbacks;
 
 typedef struct {
-    char *data;
-    size_t len;
-    uint16_t status;
+    uint8_t *data;
+    size_t length;
+    // status code is a long in curl
+    int64_t status;
     CURLcode result;
 } MuseResponse;
 
@@ -30,7 +31,7 @@ typedef struct {
 typedef void (*MuseHTTPCallback)(MuseResponse *res, void *user_data);
 
 typedef struct {
-    char *data;
+    uint8_t *data;
     size_t length;
     size_t capacity;
 } WSMessage;
@@ -57,12 +58,12 @@ void bot_init(MuseBot *bot);
 bool bot_still_running(MuseBot *bot);
 void bot_poll(MuseBot *bot, int64_t default_timeout_ms);
 void bot_ws_open(MuseBot *bot, const char *url, MuseWSCallbacks cbs);
-CURLcode bot_ws_send(MuseBot *bot, const char *text);
+CURLcode bot_ws_send(MuseBot *bot, const uint8_t *data, size_t length);
 void bot_http_get(MuseBot *bot, const char *url, MuseHTTPCallback on_done,
                   void *user_data);
-void bot_http_post(MuseBot *bot, const char *url, const char *body,
-                   const char *content_type, MuseHTTPCallback on_done,
-                   void *user_data);
+void bot_http_post(MuseBot *bot, const char *url, const uint8_t *body,
+                   size_t content_length, const char *content_type,
+                   MuseHTTPCallback on_done, void *user_data);
 void bot_destroy(MuseBot *bot);
 
 #endif // BOT_H
