@@ -1,0 +1,8 @@
+muse
+*.exe
+*.o
+*.obj
+*.out
+*.log
+*.swp
+.vscode/
