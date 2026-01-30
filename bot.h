@@ -20,14 +20,20 @@ typedef struct {
 } MuseWSCallbacks;
 
 typedef struct {
-    // NOTE: The data only lives during `RequestContext`'s `on_done` callback
     char *data;
     size_t len;
     uint16_t status;
     CURLcode result;
 } MuseResponse;
 
+// NOTE: The data in the response is only valid within the callback
 typedef void (*MuseHTTPCallback)(MuseResponse *res, void *user_data);
+
+typedef struct {
+    char *data;
+    size_t length;
+    size_t capacity;
+} WSMessage;
 
 typedef struct MuseBot {
     CURLM *multi;
@@ -44,6 +50,7 @@ typedef struct MuseBot {
     bool ws_on_connect_fired;
 
     MuseWSCallbacks ws_callbacks;
+    WSMessage current_message;
 } MuseBot;
 
 void bot_init(MuseBot *bot);

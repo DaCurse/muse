@@ -43,10 +43,10 @@ int main() {
                     .on_message = test_on_message,
                 });
 
-    bot_http_get(&bot, "https://postman-echo.com/get", test_on_response, NULL);
-    bot_http_post(
-        &bot, "https://postman-echo.com/post", "field1=value1&field2=value2",
-        "application/x-www-form-urlencoded", test_on_post_response, NULL);
+    // bot_http_get(&bot, "https://postman-echo.com/get", test_on_response, NULL);
+    // bot_http_post(
+    //     &bot, "https://postman-echo.com/post", "field1=value1&field2=value2",
+    //     "application/x-www-form-urlencoded", test_on_post_response, NULL);
 
     while (bot_still_running(&bot)) {
         bot_poll(&bot, 1000L);
