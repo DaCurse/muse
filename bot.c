@@ -90,8 +90,8 @@ static void bot_send_identify(MuseBot *bot) {
         .properties =
             {
                 .os = OS_NAME,
-                .browser = ts->user_agent,
-                .device = ts->user_agent,
+                .browser = "muse",
+                .device = "muse",
             },
         .intents = bot->intents,
     };

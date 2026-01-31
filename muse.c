@@ -11,7 +11,7 @@
 #include "discord.h"
 #include "transport.h"
 
-#define USER_AGENT ("Muse/1.0")
+#define USER_AGENT ("Muse (https://github.com/DaCurse/muse, 1.0)")
 #define GATEWAY_URL ("wss://gateway.discord.gg/?v=10&encoding=json")
 
 /**
