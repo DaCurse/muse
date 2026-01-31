@@ -6,3 +6,4 @@ muse
 *.log
 *.swp
 .vscode/
+.env
