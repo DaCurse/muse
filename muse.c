@@ -1,66 +1,76 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include "bot.h"
+#include <cjson/cJSON.h>
 
-void test_on_connect(MuseBot *bot) {
+#include "discord.h"
+#include "transport.h"
+
+#ifdef _WIN32
+static const char *OS_NAME = "windows";
+#else
+static const char *OS_NAME = "linux";
+#endif
+
+static int test_break = 0;
+/**
+ * https://discord.com/developers/docs/events/gateway#list-of-intents
+ * (1 << 0)  - GUILDS
+ * (1 << 9)  - GUILD_MESSAGES
+ * (1 << 15) - MESSAGE_CONTENT
+ */
+const uint32_t DISCORD_BOT_INTENTS = (1 << 0) | (1 << 9) | (1 << 15);
+
+void test_on_connect(MuseTransport *ts) {
+    (void)ts;
+
     printf("WebSocket connected!\n");
-    char *message = "Hello, WebSocket!";
-    CURLcode res = bot_ws_send(bot, (uint8_t *)message, strlen(message));
-    if (res != CURLE_OK) {
-        fprintf(stderr, "Failed to send initial message: %d\n", res);
-    }
 }
 
-void test_on_message(MuseBot *bot, const uint8_t *data, size_t length) {
-    printf("Received message: %.*s\n", (int)length, data);
-    char *message = "Hello, WebSocket!";
-    CURLcode res = bot_ws_send(bot, (uint8_t *)message, strlen(message));
-    if (res != CURLE_OK) {
-        fprintf(stderr, "Failed to send message: %d\n", res);
-    }
-}
+void test_on_message(MuseTransport *ts, const uint8_t *data, size_t length) {
+    (void)ts;
 
-void test_on_response(MuseResponse *res, void *user_data) {
-    if (res->result == CURLE_OK) {
-        printf("HTTP GET Response (%ld): %.*s\n", res->status, (int)res->length,
-               res->data);
-    } else {
-        fprintf(stderr, "HTTP GET failed: %d\n", res->result);
+    printf("Received %zu bytes long message: %.*s\n", length, (int)length,
+           data);
+    GatewayEventPayload payload = {0};
+    if (!gateway_event_parse((uint8_t *)data, length, &payload)) {
+        fprintf(stderr, "Failed to parse gateway event payload\n");
+        return;
     }
-}
 
-void test_on_post_response(MuseResponse *res, void *user_data) {
-    if (res->result == CURLE_OK) {
-        printf("HTTP POST Response (%ld): %.*s\n", res->status,
-               (int)res->length, res->data);
-    } else {
-        fprintf(stderr, "HTTP POST failed: %d\n", res->result);
+    switch (payload.op) {
+    case RECEIVE_OPCODE_HELLO:
+        break;
+    case RECEIVE_OPCODE_HEARTBEAT_ACK:
+        break;
+    case RECEIVE_OPCODE_HEARTBEAT:
+        break;
+    case RECEIVE_OPCODE_INVALID_SESSION:
+        break;
+    case RECEIVE_OPCODE_DISPATCH:
+        break;
     }
+
+    gateway_event_cleanup(&payload);
 }
 
 int main() {
-    MuseBot bot = {0};
-    bot_init(&bot);
+    MuseTransport ts = {0};
+    transport_init(&ts, NULL);
 
-    bot_ws_open(&bot, "wss://ws.postman-echo.com/raw",
-                (MuseWSCallbacks){
-                    .on_connect = test_on_connect,
-                    .on_message = test_on_message,
-                });
+    transport_ws_open(&ts, "wss://gateway.discord.gg/?v=10&encoding=json",
+                      (WSCallbacks){
+                          .on_connect = test_on_connect,
+                          .on_message = test_on_message,
+                      });
 
-    bot_http_get(&bot, "https://postman-echo.com/get", test_on_response, NULL);
-    char *body = "field1=value1&field2=value2";
-    bot_http_post(&bot, "https://postman-echo.com/post", (uint8_t *)body,
-                  strlen(body), "application/x-www-form-urlencoded",
-                  test_on_post_response, NULL);
-
-    while (bot_still_running(&bot)) {
-        bot_poll(&bot, 1000L);
+    while (transport_still_running(&ts) && !test_break) {
+        transport_poll(&ts, 1000L);
     }
 
-    bot_destroy(&bot);
+    transport_destroy(&ts);
     return 0;
 }
 

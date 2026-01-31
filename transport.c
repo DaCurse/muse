@@ -1,4 +1,4 @@
-#include "bot.h"
+#include "transport.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -39,15 +39,15 @@ typedef struct {
     size_t length;
     size_t capacity;
     struct curl_slist *headers;
-    MuseHTTPCallback on_done;
+    HTTPCallback on_done;
     void *user_data;
 } RequestContext;
 
 static int timer_callback(CURLM *multi, long timeout_ms, void *userp) {
     (void)multi;
 
-    MuseBot *bot = (MuseBot *)userp;
-    bot->timeout_ms = timeout_ms;
+    MuseTransport *ts = (MuseTransport *)userp;
+    ts->timeout_ms = timeout_ms;
     return 0;
 }
 
@@ -55,13 +55,13 @@ int socket_callback(CURL *curl, curl_socket_t socket, int action, void *userp,
                     void *socketp) {
     (void)curl;
 
-    MuseBot *bot = (MuseBot *)userp;
+    MuseTransport *ts = (MuseTransport *)userp;
     SocketContext *ctx = (SocketContext *)socketp;
     struct epoll_event ev = {0};
 
     if (action == CURL_POLL_REMOVE) {
         if (ctx) {
-            epoll_ctl(bot->epfd, EPOLL_CTL_DEL, socket, NULL);
+            epoll_ctl(ts->epfd, EPOLL_CTL_DEL, socket, NULL);
             free(ctx);
         }
         return 0;
@@ -70,39 +70,39 @@ int socket_callback(CURL *curl, curl_socket_t socket, int action, void *userp,
     if (!ctx) {
         ctx = calloc(1, sizeof(*ctx));
         ctx->sockfd = socket;
-        curl_multi_assign(bot->multi, socket, ctx);
+        curl_multi_assign(ts->multi, socket, ctx);
     }
 
     ev.events = (action & CURL_POLL_IN ? EPOLLIN : 0) |
                 (action & CURL_POLL_OUT ? EPOLLOUT : 0);
     ev.data.ptr = ctx;
 
-    if (epoll_ctl(bot->epfd, EPOLL_CTL_ADD, socket, &ev) == -1 &&
+    if (epoll_ctl(ts->epfd, EPOLL_CTL_ADD, socket, &ev) == -1 &&
         errno == EEXIST) {
-        epoll_ctl(bot->epfd, EPOLL_CTL_MOD, socket, &ev);
+        epoll_ctl(ts->epfd, EPOLL_CTL_MOD, socket, &ev);
     }
 
     return 0;
 }
 
-static void request_cleanup(RequestContext *ctx) {
+static void request_free(RequestContext *ctx) {
     if (ctx->headers)
         curl_slist_free_all(ctx->headers);
     free(ctx->data);
     free(ctx);
 }
 
-static void handle_multi_messages(MuseBot *bot) {
+static void handle_multi_messages(MuseTransport *ts) {
     CURLMsg *msg;
     int pending;
 
-    while ((msg = curl_multi_info_read(bot->multi, &pending))) {
+    while ((msg = curl_multi_info_read(ts->multi, &pending))) {
         if (msg->msg == CURLMSG_DONE) {
 
             // Handle websocket
-            if (msg->easy_handle == bot->ws_easy) {
+            if (msg->easy_handle == ts->ws_easy) {
                 if (msg->data.result == CURLE_OK) {
-                    bot->ws_handshake_done = true;
+                    ts->ws_handshake_done = true;
                 } else {
                     fprintf(stderr, "WebSocket Disconnected/Error: %d\n",
                             msg->data.result);
@@ -116,7 +116,7 @@ static void handle_multi_messages(MuseBot *bot) {
                 curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &ctx);
 
                 if (ctx) {
-                    MuseResponse res = {0};
+                    HTTPResponse res = {0};
                     res.result = msg->data.result;
                     res.data = ctx->data;
                     res.length = ctx->length;
@@ -125,54 +125,55 @@ static void handle_multi_messages(MuseBot *bot) {
                                       &res.status);
 
                     if (ctx->on_done) {
-                        ctx->on_done(&res, ctx->user_data);
+                        ctx->on_done(&res);
                     }
 
-                    request_cleanup(ctx);
+                    request_free(ctx);
                 }
 
-                curl_multi_remove_handle(bot->multi, msg->easy_handle);
+                curl_multi_remove_handle(ts->multi, msg->easy_handle);
                 curl_easy_cleanup(msg->easy_handle);
             }
         }
     }
 }
 
-void bot_init(MuseBot *bot) {
-    bot->multi = curl_multi_init();
-    bot->epfd = epoll_create1(0);
+void transport_init(MuseTransport *ts, void* user_data) {
+    ts->multi = curl_multi_init();
+    ts->epfd = epoll_create1(0);
+    ts->user_data = user_data;
 
-    curl_multi_setopt(bot->multi, CURLMOPT_SOCKETFUNCTION, socket_callback);
-    curl_multi_setopt(bot->multi, CURLMOPT_SOCKETDATA, bot);
-    curl_multi_setopt(bot->multi, CURLMOPT_TIMERFUNCTION, timer_callback);
-    curl_multi_setopt(bot->multi, CURLMOPT_TIMERDATA, bot);
+    curl_multi_setopt(ts->multi, CURLMOPT_SOCKETFUNCTION, socket_callback);
+    curl_multi_setopt(ts->multi, CURLMOPT_SOCKETDATA, ts);
+    curl_multi_setopt(ts->multi, CURLMOPT_TIMERFUNCTION, timer_callback);
+    curl_multi_setopt(ts->multi, CURLMOPT_TIMERDATA, ts);
 }
 
-bool bot_still_running(MuseBot *bot) {
-    if (bot->ws_easy != NULL)
+bool transport_still_running(MuseTransport *ts) {
+    if (ts->ws_easy != NULL)
         return true;
-    if (bot->running_handles > 0)
+    if (ts->running_handles > 0)
         return true;
     return false;
 }
 
-static void drain_ws_messages(MuseBot *bot) {
+static void drain_ws_messages(MuseTransport *ts) {
     size_t rlen;
     const struct curl_ws_frame *meta;
     char chunk[4096];
 
     for (;;) {
         CURLcode res =
-            curl_ws_recv(bot->ws_easy, chunk, sizeof(chunk), &rlen, &meta);
+            curl_ws_recv(ts->ws_easy, chunk, sizeof(chunk), &rlen, &meta);
 
         if (res == CURLE_AGAIN) {
             break;
         }
 
         if (res != CURLE_OK) {
-            bot->ws_handshake_done = false;
-            bot->ws_on_connect_fired = false;
-            bot->current_message.length = 0;
+            ts->ws_handshake_done = false;
+            ts->ws_on_connect_fired = false;
+            ts->current_message.length = 0;
             break;
         }
 
@@ -180,70 +181,68 @@ static void drain_ws_messages(MuseBot *bot) {
         bool is_cont = (meta->flags & CURLWS_CONT);
 
         if (is_data && rlen > 0) {
-            buffer_append(&bot->current_message, chunk, rlen);
+            buffer_append(&ts->current_message, chunk, rlen);
         } else {
             // TODO: Handle pings/pongs/close frames
         }
 
         // https://curl.se/libcurl/c/curl_ws_meta.html#CURLWSCONT
         if (is_data && !is_cont) {
-            if (bot->ws_callbacks.on_message &&
-                bot->current_message.length > 0) {
-                bot->ws_callbacks.on_message(bot, bot->current_message.data,
-                                             bot->current_message.length);
+            if (ts->ws_callbacks.on_message && ts->current_message.length > 0) {
+                ts->ws_callbacks.on_message(ts, ts->current_message.data,
+                                            ts->current_message.length);
             }
-            bot->current_message.length = 0;
+            ts->current_message.length = 0;
         }
     }
 }
 
-void bot_poll(MuseBot *bot, int64_t default_timeout_ms) {
-    int64_t wait_ms = bot->timeout_ms;
+void transport_poll(MuseTransport *ts, int64_t default_timeout_ms) {
+    int64_t wait_ms = ts->timeout_ms;
     if (wait_ms < 0)
         wait_ms = default_timeout_ms;
     if (wait_ms == 0)
         wait_ms = 1;
 
     struct epoll_event events[16];
-    int num_fds =
-        epoll_wait(bot->epfd, events, sizeof(events) / sizeof(events[0]),
-                   (int32_t)wait_ms);
+    int num_fds = epoll_wait(
+        ts->epfd, events, sizeof(events) / sizeof(events[0]), (int32_t)wait_ms);
 
     if (num_fds > 0) { // Convert epoll events to curl actions
         for (int i = 0; i < num_fds; i++) {
             SocketContext *ctx = (SocketContext *)events[i].data.ptr;
             int action = (events[i].events & EPOLLIN ? CURL_CSELECT_IN : 0) |
                          (events[i].events & EPOLLOUT ? CURL_CSELECT_OUT : 0);
-            curl_multi_socket_action(bot->multi, ctx->sockfd, action,
-                                     &bot->running_handles);
+            curl_multi_socket_action(ts->multi, ctx->sockfd, action,
+                                     &ts->running_handles);
         }
     } else { // epoll timeout handling
-        curl_multi_socket_action(bot->multi, CURL_SOCKET_TIMEOUT, 0,
-                                 &bot->running_handles);
+        curl_multi_socket_action(ts->multi, CURL_SOCKET_TIMEOUT, 0,
+                                 &ts->running_handles);
     }
 
     // Handle multi messages
-    handle_multi_messages(bot);
-    curl_multi_socket_action(bot->multi, CURL_SOCKET_TIMEOUT, 0,
-                             &bot->running_handles);
+    handle_multi_messages(ts);
+    curl_multi_socket_action(ts->multi, CURL_SOCKET_TIMEOUT, 0,
+                             &ts->running_handles);
 
     // Fire websocket on connect once
-    if (bot->ws_handshake_done && !bot->ws_on_connect_fired) {
-        bot->ws_on_connect_fired = true;
-        if (bot->ws_callbacks.on_connect) {
-            bot->ws_callbacks.on_connect(bot);
+    if (ts->ws_handshake_done && !ts->ws_on_connect_fired) {
+        ts->ws_on_connect_fired = true;
+        if (ts->ws_callbacks.on_connect) {
+            ts->ws_callbacks.on_connect(ts);
         }
     }
 
     // Drain websocket messages
-    if (bot->ws_handshake_done) {
-        drain_ws_messages(bot);
+    if (ts->ws_handshake_done) {
+        drain_ws_messages(ts);
     }
 }
 
-void bot_ws_open(MuseBot *bot, const char *url, MuseWSCallbacks cbs) {
-    bot->ws_callbacks.on_connect = cbs.on_connect;
-    bot->ws_callbacks.on_message = cbs.on_message;
+void transport_ws_open(MuseTransport *ts, const char *url, WSCallbacks cbs) {
+    ts->ws_callbacks.on_connect = cbs.on_connect;
+    ts->ws_callbacks.on_message = cbs.on_message;
 
     CURL *ws_easy = curl_easy_init();
     curl_easy_setopt(ws_easy, CURLOPT_URL, url);
@@ -252,20 +251,21 @@ void bot_ws_open(MuseBot *bot, const char *url, MuseWSCallbacks cbs) {
     // Set to NULL to not confuse with request handles
     curl_easy_setopt(ws_easy, CURLOPT_PRIVATE, NULL);
 
-    curl_multi_add_handle(bot->multi, ws_easy);
-    bot->ws_easy = ws_easy;
+    curl_multi_add_handle(ts->multi, ws_easy);
+    ts->ws_easy = ws_easy;
 
     // Kickstart the connection process
-    curl_multi_socket_action(bot->multi, CURL_SOCKET_TIMEOUT, 0,
-                             &bot->running_handles);
+    curl_multi_socket_action(ts->multi, CURL_SOCKET_TIMEOUT, 0,
+                             &ts->running_handles);
 }
 
-CURLcode bot_ws_send(MuseBot *bot, const uint8_t *data, size_t length) {
-    if (!bot->ws_handshake_done)
+CURLcode transport_ws_send(MuseTransport *ts, const uint8_t *data,
+                           size_t length) {
+    if (!ts->ws_handshake_done)
         return CURLE_COULDNT_CONNECT;
 
     size_t sent;
-    return curl_ws_send(bot->ws_easy, data, length, &sent, 0, CURLWS_TEXT);
+    return curl_ws_send(ts->ws_easy, data, length, &sent, 0, CURLWS_TEXT);
 }
 
 static size_t http_write_callback(void *data, size_t size, size_t nmemb,
@@ -281,12 +281,12 @@ static size_t http_write_callback(void *data, size_t size, size_t nmemb,
     return realsize;
 }
 
-void bot_http_get(MuseBot *bot, const char *url, MuseHTTPCallback on_done,
-                  void *user_data) {
+void transport_http_get(MuseTransport *ts, const char *url,
+                        HTTPCallback on_done) {
     CURL *easy = curl_easy_init();
     RequestContext *ctx = calloc(1, sizeof(RequestContext));
     ctx->on_done = on_done;
-    ctx->user_data = user_data;
+    ctx->user_data = ts->user_data;
 
     curl_easy_setopt(easy, CURLOPT_URL, url);
     curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, http_write_callback);
@@ -294,16 +294,16 @@ void bot_http_get(MuseBot *bot, const char *url, MuseHTTPCallback on_done,
     curl_easy_setopt(easy, CURLOPT_PRIVATE, ctx);
     curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1L);
 
-    curl_multi_add_handle(bot->multi, easy);
+    curl_multi_add_handle(ts->multi, easy);
 }
 
-void bot_http_post(MuseBot *bot, const char *url, const uint8_t *body,
-                   size_t content_length, const char *content_type,
-                   MuseHTTPCallback on_done, void *user_data) {
+void transport_http_post(MuseTransport *ts, const char *url,
+                         const uint8_t *body, size_t content_length,
+                         const char *content_type, HTTPCallback on_done) {
     CURL *easy = curl_easy_init();
     RequestContext *ctx = calloc(1, sizeof(RequestContext));
     ctx->on_done = on_done;
-    ctx->user_data = user_data;
+    ctx->user_data = ts->user_data;
 
     char header[256];
     snprintf(header, sizeof(header), "Content-Type: %s", content_type);
@@ -317,48 +317,48 @@ void bot_http_post(MuseBot *bot, const char *url, const uint8_t *body,
     curl_easy_setopt(easy, CURLOPT_WRITEDATA, ctx);
     curl_easy_setopt(easy, CURLOPT_PRIVATE, ctx);
 
-    curl_multi_add_handle(bot->multi, easy);
+    curl_multi_add_handle(ts->multi, easy);
 }
 
-void bot_destroy(MuseBot *bot) {
-    if (!bot)
+void transport_destroy(MuseTransport *ts) {
+    if (!ts)
         return;
 
     // Clean up all remaining requests
-    CURL **handles = curl_multi_get_handles(bot->multi);
+    CURL **handles = curl_multi_get_handles(ts->multi);
     if (handles) {
         for (int i = 0; handles[i]; i++) {
-            if (handles[i] == bot->ws_easy)
+            if (handles[i] == ts->ws_easy)
                 continue;
 
             void *ptr;
             curl_easy_getinfo(handles[i], CURLINFO_PRIVATE, &ptr);
 
             if (ptr) {
-                request_cleanup((RequestContext *)ptr);
+                request_free((RequestContext *)ptr);
             }
 
-            curl_multi_remove_handle(bot->multi, handles[i]);
+            curl_multi_remove_handle(ts->multi, handles[i]);
             curl_easy_cleanup(handles[i]);
         }
         curl_free(handles);
     }
 
-    if (bot->ws_easy) {
-        curl_multi_remove_handle(bot->multi, bot->ws_easy);
-        curl_easy_cleanup(bot->ws_easy);
-        bot->ws_easy = NULL;
+    if (ts->ws_easy) {
+        curl_multi_remove_handle(ts->multi, ts->ws_easy);
+        curl_easy_cleanup(ts->ws_easy);
+        ts->ws_easy = NULL;
     }
 
-    curl_multi_cleanup(bot->multi);
+    curl_multi_cleanup(ts->multi);
 
-    if (bot->epfd) {
+    if (ts->epfd) {
 #ifndef _WIN32
-        close(bot->epfd);
+        close(ts->epfd);
 #else
-        epoll_close(bot->epfd);
+        epoll_close(ts->epfd);
 #endif
     }
 
-    free(bot->current_message.data);
+    free(ts->current_message.data);
 }
