@@ -1,6 +1,7 @@
 #ifndef TRANSPORT_H
 #define TRANSPORT_H
 
+#include <cjson/cJSON.h>
 #include <curl/curl.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -16,6 +17,7 @@ typedef struct MuseTransport MuseTransport;
 
 typedef struct {
     void (*on_connect)(struct MuseTransport *ts);
+    void (*on_disconnect)(struct MuseTransport *ts);
     void (*on_message)(struct MuseTransport *ts, const uint8_t *data,
                        size_t length);
 } WSCallbacks;
@@ -45,6 +47,7 @@ typedef struct MuseTransport {
     HANDLE epfd;
 #endif
     int64_t timeout_ms;
+    const char *user_agent;
     CURL *ws_easy;
     int running_handles;
 
@@ -57,12 +60,15 @@ typedef struct MuseTransport {
     WSMessage current_message;
 } MuseTransport;
 
-void transport_init(MuseTransport *ts, void* user_data);
-bool transport_still_running(MuseTransport *ts);
+void transport_init(MuseTransport *ts, const char *user_agent, WSCallbacks cbs,
+                    void *user_data);
+bool transport_is_ws_open(MuseTransport *ts);
 void transport_poll(MuseTransport *ts, int64_t default_timeout_ms);
-void transport_ws_open(MuseTransport *ts, const char *url, WSCallbacks cbs);
+void transport_ws_open(MuseTransport *ts, const char *url);
+void transport_ws_close(MuseTransport *t);
 CURLcode transport_ws_send(MuseTransport *ts, const uint8_t *data,
                            size_t length);
+CURLcode transport_ws_send_json(MuseTransport *ts, const cJSON *data);
 void transport_http_get(MuseTransport *ts, const char *url,
                         HTTPCallback on_done);
 void transport_http_post(MuseTransport *ts, const char *url,

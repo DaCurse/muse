@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -Iinclude
 LDFLAGS = -lcjson -lcurl
 
-SRC = muse.c transport.c discord.c
+SRC = muse.c transport.c discord.c bot.c
 WIN_SRC = wepoll/wepoll.c
 OUT = muse
 
@@ -14,7 +14,7 @@ endif
 
 all: debug
 
-debug: CFLAGS += -g -O0
+debug: CFLAGS += -ggdb -O0
 debug: $(OUT)
 
 san: SAN_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer

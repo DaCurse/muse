@@ -9,6 +9,7 @@
 typedef enum {
     RECEIVE_OPCODE_DISPATCH = 0,
     RECEIVE_OPCODE_HEARTBEAT = 1,
+    RECEIVE_OPCODE_RECONNECT = 7,
     RECEIVE_OPCODE_INVALID_SESSION = 9,
     RECEIVE_OPCODE_HELLO = 10,
     RECEIVE_OPCODE_HEARTBEAT_ACK = 11,
@@ -17,6 +18,7 @@ typedef enum {
 typedef enum {
     SEND_OPCODE_HEARTBEAT = 1,
     SEND_OPCODE_IDENTIFY = 2,
+    SEND_OPCODE_RESUME = 6,
 } GatewayOpcodeSend;
 
 // https://discord.com/developers/docs/events/gateway-events#payload-structure

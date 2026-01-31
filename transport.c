@@ -106,7 +106,7 @@ static void handle_multi_messages(MuseTransport *ts) {
                 } else {
                     fprintf(stderr, "WebSocket Disconnected/Error: %d\n",
                             msg->data.result);
-                    // TODO: Handle reconnection?
+                    transport_ws_close(ts);
                 }
             }
 
@@ -138,9 +138,12 @@ static void handle_multi_messages(MuseTransport *ts) {
     }
 }
 
-void transport_init(MuseTransport *ts, void* user_data) {
+void transport_init(MuseTransport *ts, const char *user_agent, WSCallbacks cbs,
+                    void *user_data) {
     ts->multi = curl_multi_init();
     ts->epfd = epoll_create1(0);
+    ts->user_agent = user_agent;
+    ts->ws_callbacks = cbs;
     ts->user_data = user_data;
 
     curl_multi_setopt(ts->multi, CURLMOPT_SOCKETFUNCTION, socket_callback);
@@ -149,13 +152,7 @@ void transport_init(MuseTransport *ts, void* user_data) {
     curl_multi_setopt(ts->multi, CURLMOPT_TIMERDATA, ts);
 }
 
-bool transport_still_running(MuseTransport *ts) {
-    if (ts->ws_easy != NULL)
-        return true;
-    if (ts->running_handles > 0)
-        return true;
-    return false;
-}
+bool transport_is_ws_open(MuseTransport *ts) { return ts->ws_easy != NULL; }
 
 static void drain_ws_messages(MuseTransport *ts) {
     size_t rlen;
@@ -171,9 +168,7 @@ static void drain_ws_messages(MuseTransport *ts) {
         }
 
         if (res != CURLE_OK) {
-            ts->ws_handshake_done = false;
-            ts->ws_on_connect_fired = false;
-            ts->current_message.length = 0;
+            transport_ws_close(ts);
             break;
         }
 
@@ -187,7 +182,7 @@ static void drain_ws_messages(MuseTransport *ts) {
         }
 
         // https://curl.se/libcurl/c/curl_ws_meta.html#CURLWSCONT
-        if (is_data && !is_cont) {
+        if (is_data && !is_cont && meta->bytesleft == 0) {
             if (ts->ws_callbacks.on_message && ts->current_message.length > 0) {
                 ts->ws_callbacks.on_message(ts, ts->current_message.data,
                                             ts->current_message.length);
@@ -235,17 +230,19 @@ void transport_poll(MuseTransport *ts, int64_t default_timeout_ms) {
     }
 
     // Drain websocket messages
-    if (ts->ws_handshake_done) {
+    if (ts->ws_easy && ts->ws_handshake_done) {
         drain_ws_messages(ts);
     }
 }
 
-void transport_ws_open(MuseTransport *ts, const char *url, WSCallbacks cbs) {
-    ts->ws_callbacks.on_connect = cbs.on_connect;
-    ts->ws_callbacks.on_message = cbs.on_message;
+void transport_ws_open(MuseTransport *ts, const char *url) {
+    if (ts->ws_easy) {
+        transport_ws_close(ts);
+    }
 
     CURL *ws_easy = curl_easy_init();
     curl_easy_setopt(ws_easy, CURLOPT_URL, url);
+    curl_easy_setopt(ws_easy, CURLOPT_USERAGENT, ts->user_agent);
     curl_easy_setopt(ws_easy, CURLOPT_CONNECT_ONLY,
                      CURLOPT_CONNECT_ONLY_HEADERS);
     // Set to NULL to not confuse with request handles
@@ -259,6 +256,20 @@ void transport_ws_open(MuseTransport *ts, const char *url, WSCallbacks cbs) {
                              &ts->running_handles);
 }
 
+void transport_ws_close(MuseTransport *t) {
+    if (t->ws_easy) {
+        curl_multi_remove_handle(t->multi, t->ws_easy);
+        curl_easy_cleanup(t->ws_easy);
+        t->ws_easy = NULL;
+    }
+    t->ws_handshake_done = false;
+    t->ws_on_connect_fired = false;
+    t->current_message.length = 0;
+
+    if (t->ws_callbacks.on_disconnect)
+        t->ws_callbacks.on_disconnect(t);
+}
+
 CURLcode transport_ws_send(MuseTransport *ts, const uint8_t *data,
                            size_t length) {
     if (!ts->ws_handshake_done)
@@ -266,6 +277,19 @@ CURLcode transport_ws_send(MuseTransport *ts, const uint8_t *data,
 
     size_t sent;
     return curl_ws_send(ts->ws_easy, data, length, &sent, 0, CURLWS_TEXT);
+}
+
+CURLcode transport_ws_send_json(MuseTransport *ts, const cJSON *data) {
+    char *json_str = cJSON_PrintUnformatted(data);
+    if (!json_str) {
+        return CURLE_FAILED_INIT;
+    }
+
+    CURLcode res =
+        transport_ws_send(ts, (const uint8_t *)json_str, strlen(json_str));
+    free(json_str);
+
+    return res;
 }
 
 static size_t http_write_callback(void *data, size_t size, size_t nmemb,
@@ -289,6 +313,7 @@ void transport_http_get(MuseTransport *ts, const char *url,
     ctx->user_data = ts->user_data;
 
     curl_easy_setopt(easy, CURLOPT_URL, url);
+    curl_easy_setopt(easy, CURLOPT_USERAGENT, ts->user_agent);
     curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, http_write_callback);
     curl_easy_setopt(easy, CURLOPT_WRITEDATA, ctx);
     curl_easy_setopt(easy, CURLOPT_PRIVATE, ctx);
@@ -311,7 +336,8 @@ void transport_http_post(MuseTransport *ts, const char *url,
 
     curl_easy_setopt(easy, CURLOPT_URL, url);
     curl_easy_setopt(easy, CURLOPT_HTTPHEADER, ctx->headers);
-    curl_easy_setopt(easy, CURLOPT_POSTFIELDS, body);
+    curl_easy_setopt(easy, CURLOPT_USERAGENT, ts->user_agent);
+    curl_easy_setopt(easy, CURLOPT_COPYPOSTFIELDS, body);
     curl_easy_setopt(easy, CURLOPT_POSTFIELDSIZE, (long)content_length);
     curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, http_write_callback);
     curl_easy_setopt(easy, CURLOPT_WRITEDATA, ctx);
