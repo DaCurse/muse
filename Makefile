@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -Iinclude
 LDFLAGS = -lcjson -lcurl
 
-SRC = muse.c transport.c discord.c bot.c
+SRC = muse.c transport.c discord.c bot.c links.c
 WIN_SRC = wepoll/wepoll.c
 OUT = muse
 

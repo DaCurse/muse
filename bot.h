@@ -32,6 +32,7 @@ typedef struct MuseBot {
     bool is_running;
     bool is_connected;
     char *session_id;
+    char *user_id;
 
     int32_t last_seq;
     int32_t heartbeat_interval_ms;
@@ -47,6 +48,9 @@ void bot_tick(MuseBot *bot);
 
 // returns True if the event was DISPATCH, letting the caller handle it
 void bot_handle_gateway_event(MuseBot *bot, const GatewayEventPayload *payload);
+
+void bot_rest_send_message(MuseBot *bot, const char *channel_id,
+                           const DiscordCreateMessage *message);
 
 void bot_destroy(MuseBot *bot);
 

@@ -9,6 +9,7 @@
 
 #include "bot.h"
 #include "discord.h"
+#include "links.h"
 #include "transport.h"
 
 #define USER_AGENT ("Muse (https://github.com/DaCurse/muse, 1.0)")
@@ -32,18 +33,128 @@ void on_disconnect(MuseTransport *ts) {
     printf("WebSocket disconnected.\n");
 }
 
+typedef struct {
+    MuseBot *bot;
+    char *channel_id;
+} MusicLinkContext;
+
+void on_music_link_fetched(HTTPResponse *res, void *user_data) {
+    MusicLinkContext *ctx = (MusicLinkContext *)user_data;
+    MuseBot *bot = ctx->bot;
+    const char *channel_id = ctx->channel_id;
+
+    if (res->result != CURLE_OK) {
+        fprintf(stderr, "Failed to fetch music links: %s\n",
+                curl_easy_strerror(res->result));
+        return;
+    }
+
+    cJSON *json = cJSON_ParseWithLength((const char *)res->data, res->length);
+    if (!json) {
+        const char *error_ptr = cJSON_GetErrorPtr();
+        if (error_ptr) {
+            fprintf(stderr, "Failed to parse music links JSON: %s\n",
+                    error_ptr);
+        }
+        return;
+    }
+
+    MusicLinks links = {0};
+    parse_music_links_response(json, &links);
+    cJSON_Delete(json);
+
+    DiscordEmbedField fields[3] = {0};
+    int field_count = 0;
+
+    if (links.spotify_url) {
+        fields[field_count].name = "Spotify";
+        fields[field_count].value = links.spotify_url;
+        fields[field_count].inline_field = false;
+        field_count++;
+    }
+    if (links.youtube_url) {
+        fields[field_count].name = "YouTube";
+        fields[field_count].value = links.youtube_url;
+        fields[field_count].inline_field = false;
+        field_count++;
+    }
+    if (links.apple_music_url) {
+        fields[field_count].name = "Apple Music";
+        fields[field_count].value = links.apple_music_url;
+        fields[field_count].inline_field = false;
+        field_count++;
+    }
+
+    DiscordEmbedImage thumbnail = {0};
+    if (links.thumbnail_url) {
+        thumbnail.url = links.thumbnail_url;
+    }
+
+    DiscordEmbed embed = {
+        .title = "Music Links",
+        .type = "rich",
+        .description = "Here are the available music links:",
+        .color = 0x35556e,
+        .thumbnail = thumbnail,
+        .image = NULL,
+        .fields = {{0}},
+    };
+
+    for (int i = 0; i < field_count; ++i) {
+        embed.fields[i] = fields[i];
+    }
+
+    DiscordCreateMessage message = {
+        .content = "",
+        .nonce = (int32_t)time(NULL),
+        .embeds = {embed},
+    };
+
+    bot_rest_send_message(bot, channel_id, &message);
+
+    music_links_free(&links);
+    free(ctx->channel_id);
+    free(ctx);
+}
+
 void on_bot_message_create(MuseBot *bot, const char *event_name,
                            const cJSON *data_json) {
-    const cJSON *content_json =
-        cJSON_GetObjectItemCaseSensitive(data_json, "content");
+    (void)event_name;
+
     const cJSON *author_json =
         cJSON_GetObjectItemCaseSensitive(data_json, "author");
-    const cJSON *username_json =
-        cJSON_GetObjectItemCaseSensitive(author_json, "username");
 
-    if (cJSON_IsString(content_json) && cJSON_IsString(username_json)) {
-        printf("[%s] [%s]: %s\n", event_name, username_json->valuestring,
-               content_json->valuestring);
+    const cJSON *author_id_json =
+        cJSON_GetObjectItemCaseSensitive(author_json, "id");
+    if (!cJSON_IsString(author_id_json))
+        return;
+
+    const char *author_id = author_id_json->valuestring;
+    if (strcmp(author_id, bot->user_id) == 0) {
+        return;
+    }
+
+    const cJSON *content_json =
+        cJSON_GetObjectItemCaseSensitive(data_json, "content");
+    const cJSON *channel_id_json =
+        cJSON_GetObjectItemCaseSensitive(data_json, "channel_id");
+
+    if (!cJSON_IsString(content_json) || !cJSON_IsString(channel_id_json))
+        return;
+
+    const char *content = content_json->valuestring;
+    const char *channel_id = channel_id_json->valuestring;
+
+    char *music_url = NULL;
+    if (is_music_link(content, &music_url)) {
+        printf("Detected music link '%s' in channel %s by user %s\n", music_url,
+               channel_id, author_id_json->valuestring);
+        MusicLinkContext *ctx =
+            (MusicLinkContext *)malloc(sizeof(MusicLinkContext));
+        ctx->bot = bot;
+        ctx->channel_id = strdup(channel_id);
+        fetch_music_links(bot->ts, music_url, on_music_link_fetched, ctx);
+        free(music_url);
     }
 }
 

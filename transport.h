@@ -31,7 +31,7 @@ typedef struct {
 } HTTPResponse;
 
 // NOTE: The data in the response is only valid within the callback
-typedef void (*HTTPCallback)(HTTPResponse *res);
+typedef void (*HTTPCallback)(HTTPResponse *res, void *user_data);
 
 typedef struct {
     uint8_t *data;
@@ -69,11 +69,14 @@ void transport_ws_close(MuseTransport *t);
 CURLcode transport_ws_send(MuseTransport *ts, const uint8_t *data,
                            size_t length);
 CURLcode transport_ws_send_json(MuseTransport *ts, const cJSON *data);
+void transport_url_encode(const char *input, char *output, size_t output_size);
 void transport_http_get(MuseTransport *ts, const char *url,
-                        HTTPCallback on_done);
+                        HTTPCallback on_done, void *user_data);
 void transport_http_post(MuseTransport *ts, const char *url,
                          const uint8_t *body, size_t content_length,
-                         const char *content_type, HTTPCallback on_done);
+                         const char *content_type,
+                         const struct curl_slist *extra_headers,
+                         HTTPCallback on_done, void *user_data);
 void transport_destroy(MuseTransport *ts);
 
 #endif // TRANSPORT_H

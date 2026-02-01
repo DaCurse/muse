@@ -5,11 +5,37 @@
 #include <string.h>
 #include <time.h>
 
+#define API_BASE_URL ("https://discord.com/api/v10")
+
 #ifdef _WIN32
 #define OS_NAME ("windows")
 #else
 #define OS_NAME ("linux")
 #endif
+
+static char url_buffer[2048];
+static const size_t base_url_len = sizeof(API_BASE_URL) - 1;
+
+static const char *format_url(const char *fmt, ...) {
+    va_list ap;
+
+    if (base_url_len >= sizeof(url_buffer)) {
+        return NULL;
+    }
+
+    memcpy(url_buffer, API_BASE_URL, base_url_len);
+
+    va_start(ap, fmt);
+    int n = vsnprintf(url_buffer + base_url_len,
+                      sizeof url_buffer - base_url_len, fmt, ap);
+    va_end(ap);
+
+    if (n < 0 || (size_t)n >= sizeof url_buffer - base_url_len) {
+        return NULL;
+    }
+
+    return url_buffer;
+}
 
 static uint64_t get_now_ms(void) {
 #ifndef _WIN32
@@ -171,6 +197,15 @@ static void bot_handle_ready(MuseBot *bot, const cJSON *data_json) {
     bot->session_id = strdup(session_id_json->valuestring);
     printf("Bot READY. Session ID: %s\n", bot->session_id);
 
+    cJSON *user_json = cJSON_GetObjectItemCaseSensitive(data_json, "user");
+    cJSON *user_id_json = cJSON_GetObjectItemCaseSensitive(user_json, "id");
+    if (cJSON_IsString(user_id_json)) {
+        if (bot->user_id)
+            free(bot->user_id);
+        bot->user_id = strdup(user_id_json->valuestring);
+        printf("Bot User ID: %s\n", bot->user_id);
+    }
+
     cJSON *gateway_url_json =
         cJSON_GetObjectItem(data_json, "resume_gateway_url");
     if (gateway_url_json && cJSON_IsString(gateway_url_json)) {
@@ -227,9 +262,63 @@ void bot_handle_gateway_event(MuseBot *bot,
     }
 }
 
+static void on_done(HTTPResponse *res, void *user_data) {
+    (void)user_data;
+
+    if (res->result != CURLE_OK) {
+        fprintf(stderr, "REST request failed: %s\n",
+                curl_easy_strerror(res->result));
+        return;
+    }
+
+    if (res->status < 200 || res->status >= 300) {
+        fprintf(stderr, "REST request returned HTTP status %ld\n", res->status);
+        return;
+    }
+
+    printf("REST request succeeded with status %ld, response length: %zu\n",
+           res->status, res->length);
+}
+
+static void bot_rest_send_json(MuseBot *bot, const char *url,
+                               const cJSON *body_json) {
+    char *body_str = cJSON_PrintUnformatted(body_json);
+    if (!body_str) {
+        fprintf(stderr, "Failed to serialize JSON body for REST request\n");
+        return;
+    }
+
+    printf("Sending REST POST to %s with body: %s\n", url, body_str);
+
+    char auth_header[256];
+    snprintf(auth_header, sizeof(auth_header), "Authorization: Bot %s",
+             bot->token);
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, auth_header);
+
+    transport_http_post(bot->ts, url, (const uint8_t *)body_str,
+                        strlen(body_str), "application/json", headers, on_done,
+                        bot);
+
+    curl_slist_free_all(headers);
+    free(body_str);
+}
+
+void bot_rest_send_message(MuseBot *bot, const char *channel_id,
+                           const DiscordCreateMessage *message) {
+    cJSON *message_json = rest_create_message(message);
+    bot_rest_send_json(bot, format_url("/channels/%s/messages", channel_id),
+                       message_json);
+    cJSON_Delete(message_json);
+}
+
 void bot_destroy(MuseBot *bot) {
     if (bot->session_id) {
         free(bot->session_id);
         bot->session_id = NULL;
+    }
+    if (bot->user_id) {
+        free(bot->user_id);
+        bot->user_id = NULL;
     }
 }

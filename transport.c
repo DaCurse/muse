@@ -41,6 +41,7 @@ typedef struct {
     struct curl_slist *headers;
     HTTPCallback on_done;
     void *user_data;
+    uint8_t *request_body;
 } RequestContext;
 
 static int timer_callback(CURLM *multi, long timeout_ms, void *userp) {
@@ -89,6 +90,7 @@ static void request_free(RequestContext *ctx) {
     if (ctx->headers)
         curl_slist_free_all(ctx->headers);
     free(ctx->data);
+    free(ctx->request_body);
     free(ctx);
 }
 
@@ -125,7 +127,7 @@ static void handle_multi_messages(MuseTransport *ts) {
                                       &res.status);
 
                     if (ctx->on_done) {
-                        ctx->on_done(&res);
+                        ctx->on_done(&res, ctx->user_data);
                     }
 
                     request_free(ctx);
@@ -305,40 +307,68 @@ static size_t http_write_callback(void *data, size_t size, size_t nmemb,
     return realsize;
 }
 
+void transport_url_encode(const char *input, char *output, size_t output_size) {
+    CURL *curl = curl_easy_init();
+    if (curl) {
+        char *encoded = curl_easy_escape(curl, input, 0);
+        snprintf(output, output_size, "%s", encoded);
+        curl_free(encoded);
+        curl_easy_cleanup(curl);
+    }
+}
+
 void transport_http_get(MuseTransport *ts, const char *url,
-                        HTTPCallback on_done) {
+                        HTTPCallback on_done, void *user_data) {
     CURL *easy = curl_easy_init();
     RequestContext *ctx = calloc(1, sizeof(RequestContext));
     ctx->on_done = on_done;
-    ctx->user_data = ts->user_data;
+    ctx->user_data = user_data;
 
+#ifdef TRANSPORT_HTTP_GET_DEBUG
+    curl_easy_setopt(easy, CURLOPT_VERBOSE, 1L);
+#endif
     curl_easy_setopt(easy, CURLOPT_URL, url);
     curl_easy_setopt(easy, CURLOPT_USERAGENT, ts->user_agent);
+    curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, http_write_callback);
     curl_easy_setopt(easy, CURLOPT_WRITEDATA, ctx);
     curl_easy_setopt(easy, CURLOPT_PRIVATE, ctx);
-    curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1L);
 
     curl_multi_add_handle(ts->multi, easy);
 }
 
 void transport_http_post(MuseTransport *ts, const char *url,
                          const uint8_t *body, size_t content_length,
-                         const char *content_type, HTTPCallback on_done) {
+                         const char *content_type,
+                         const struct curl_slist *extra_headers,
+                         HTTPCallback on_done, void *user_data) {
     CURL *easy = curl_easy_init();
     RequestContext *ctx = calloc(1, sizeof(RequestContext));
     ctx->on_done = on_done;
-    ctx->user_data = ts->user_data;
+    ctx->user_data = user_data;
+
+    ctx->request_body = malloc(content_length);
+    memcpy(ctx->request_body, body, content_length);
 
     char header[256];
     snprintf(header, sizeof(header), "Content-Type: %s", content_type);
     ctx->headers = curl_slist_append(NULL, header);
 
+    const struct curl_slist *hdr = extra_headers;
+    while (hdr) {
+        ctx->headers = curl_slist_append(ctx->headers, hdr->data);
+        hdr = hdr->next;
+    }
+
+#ifdef TRANSPORT_HTTP_POST_DEBUG
+    curl_easy_setopt(easy, CURLOPT_VERBOSE, 1L);
+#endif
     curl_easy_setopt(easy, CURLOPT_URL, url);
     curl_easy_setopt(easy, CURLOPT_HTTPHEADER, ctx->headers);
     curl_easy_setopt(easy, CURLOPT_USERAGENT, ts->user_agent);
-    curl_easy_setopt(easy, CURLOPT_COPYPOSTFIELDS, body);
+    curl_easy_setopt(easy, CURLOPT_POSTFIELDS, ctx->request_body);
     curl_easy_setopt(easy, CURLOPT_POSTFIELDSIZE, (long)content_length);
+    curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, http_write_callback);
     curl_easy_setopt(easy, CURLOPT_WRITEDATA, ctx);
     curl_easy_setopt(easy, CURLOPT_PRIVATE, ctx);
