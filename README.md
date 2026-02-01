@@ -4,6 +4,8 @@ A minimal Discord bot written in C that detects song links in messages and repli
 
 The bot communicates directly with the Discord Gateway and REST API, using epoll for event handling and libcurl for WebSockets and HTTP requests.
 
+Compilation on Windows tested with MSYS2 MINGW64.
+
 ## References
 
 Using wepoll for Windows:

@@ -37,7 +37,12 @@ static bool match_music_link(const char *message, char **out_url,
             if (regexec(&regex, message, 1, matches, 0) == 0) {
                 int start = matches[0].rm_so;
                 int end = matches[0].rm_eo;
-                *out_url = strndup(message + start, end - start);
+                size_t len = end - start;
+                *out_url = malloc(len + 1);
+                if (*out_url) {
+                    memcpy(*out_url, message + start, len);
+                    (*out_url)[len] = '\0';
+                }
                 regfree(&regex);
                 return true;
             }

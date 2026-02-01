@@ -8,7 +8,7 @@ OUT = muse
 
 ifeq ($(OS),Windows_NT)
     SRC += $(WIN_SRC)
-    LDFLAGS += -lws2_32
+    LDFLAGS += -lws2_32 -lregex
     OUT := $(OUT).exe
 endif
 
