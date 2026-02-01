@@ -12,6 +12,6 @@ Using wepoll for Windows:
 Based on cURL multi event example:
 <https://curl.se/libcurl/c/multi-event.html>
 
-Usong Songlink's public API for cross-platform song matching:
+Using Songlink's public API for cross-platform song matching:
 * <https://odesli.co/>
 * <https://linktree.notion.site/API-d0ebe08a5e304a55928405eb682f6741>
