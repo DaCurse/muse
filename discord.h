@@ -7,6 +7,7 @@
 
 #define MAX_EMBED_FIELDS (25)
 #define MAX_MESSAGE_EMBEDS (10)
+#define MAX_ACTIVITY_BUTTONS (2)
 
 #define FOREACH_EMBED_TYPE(TYPE)                                               \
     TYPE(EMBED_TYPE_RICH, "rich")                                              \
@@ -75,10 +76,17 @@ typedef enum {
 
 // https://discord.com/developers/docs/events/gateway-events#activity-object
 typedef struct {
+    const char *label;
+    const char *url;
+} ActivityButton;
+
+// https://discord.com/developers/docs/events/gateway-events#activity-object
+typedef struct {
     const char *name;
     ActivityType type;
     int64_t created_at;
     const char *url;
+    ActivityButton buttons[MAX_ACTIVITY_BUTTONS];
 } ActivityData;
 
 // https://discord.com/developers/docs/events/gateway-events#update-presence

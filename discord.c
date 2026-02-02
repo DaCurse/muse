@@ -90,13 +90,37 @@ cleanup:
     return NULL;
 }
 
+static cJSON *serialize_activity_button(const ActivityButton *button) {
+    cJSON *button_json = NULL;
+
+    button_json = cJSON_CreateObject();
+    if (!button_json) {
+        fprintf(stderr, "Failed to create button JSON object\n");
+        goto cleanup;
+    }
+
+    cJSON_AddStringToObject(button_json, "label", button->label);
+    if (button->url) {
+        cJSON_AddStringToObject(button_json, "url", button->url);
+    }
+
+    return button_json;
+
+cleanup:
+    if (button_json)
+        cJSON_Delete(button_json);
+    return NULL;
+}
+
 static cJSON *serialize_activity(const ActivityData *activity) {
     cJSON *activity_json = NULL;
+    cJSON *buttons_json = NULL;
+    cJSON *button_json = NULL;
 
     activity_json = cJSON_CreateObject();
     if (!activity_json) {
         fprintf(stderr, "Failed to create activity JSON object\n");
-        return NULL;
+        goto cleanup;
     }
 
     cJSON_AddStringToObject(activity_json, "name", activity->name);
@@ -106,13 +130,44 @@ static cJSON *serialize_activity(const ActivityData *activity) {
         cJSON_AddStringToObject(activity_json, "url", activity->url);
     }
 
+    buttons_json = cJSON_CreateArray();
+    if (!buttons_json) {
+        fprintf(stderr, "Failed to create buttons JSON array\n");
+        goto cleanup;
+    }
+
+    for (int i = 0; i < MAX_ACTIVITY_BUTTONS; ++i) {
+        const ActivityButton *button = &activity->buttons[i];
+        if (!button->label) {
+            continue;
+        }
+
+        button_json = serialize_activity_button(button);
+        if (!button_json) {
+            goto cleanup;
+        }
+
+        cJSON_AddItemToArray(buttons_json, button_json);
+        button_json = NULL;
+    }
+
+    cJSON_AddItemToObject(activity_json, "buttons", buttons_json);
+
     return activity_json;
+
+cleanup:
+    if (button_json)
+        cJSON_Delete(button_json);
+    if (buttons_json)
+        cJSON_Delete(buttons_json);
+    if (activity_json)
+        cJSON_Delete(activity_json);
+    return NULL;
 }
 
 cJSON *gateway_event_update_presence(const UpdatePresenceData *data) {
     cJSON *d_json = NULL;
     cJSON *activities_json = NULL;
-    cJSON *payload_json = NULL;
 
     d_json = cJSON_CreateObject();
     if (!d_json) {
