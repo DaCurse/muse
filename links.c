@@ -30,6 +30,11 @@ const char *TIDAL_PATTERNS[] = {
     NULL,
 };
 
+const char *SOUNDCLOUD_PATTERNS[] = {
+    "soundcloud.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)",
+    NULL,
+};
+
 static bool match_music_link(const char *message, char **out_url,
                              const char **patterns) {
     regex_t regex;
@@ -67,6 +72,7 @@ bool is_music_link(const char *message, MusicPlatform *out_platform,
         {YOUTUBE_PATTERNS, PLATFORM_YOUTBUE},
         {APPLE_MUSIC_PATTERNS, PLATFORM_APPLE_MUSIC},
         {TIDAL_PATTERNS, PLATFORM_TIDAL},
+        {SOUNDCLOUD_PATTERNS, PLATFORM_SOUNDCLOUD},
     };
 
     for (size_t i = 0; i < sizeof(platform_checks) / sizeof(platform_checks[0]);
@@ -103,6 +109,7 @@ void parse_music_links_response(cJSON *response_json, MusicLinks *out_links) {
             {"youtube", &out_links->youtube_url},
             {"appleMusic", &out_links->apple_music_url},
             {"tidal", &out_links->tidal_url},
+            {"soundcloud", &out_links->soundcloud_url},
         };
 
         for (size_t i = 0; i < sizeof(platform_map) / sizeof(platform_map[0]);

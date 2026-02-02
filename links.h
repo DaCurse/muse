@@ -12,6 +12,7 @@ extern const char *SPOTIFY_PATTERNS[];
 extern const char *YOUTUBE_PATTERNS[];
 extern const char *APPLE_MUSIC_PATTERNS[];
 extern const char *TIDAL_PATTERNS[];
+extern const char *SOUNDCLOUD_PATTERNS[];
 
 typedef enum {
     PLATFORM_SPOTIFY,
@@ -27,6 +28,7 @@ typedef struct {
     char *youtube_url;
     char *apple_music_url;
     char *tidal_url;
+    char *soundcloud_url;
     char *thumbnail_url;
 } MusicLinks;
 

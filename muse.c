@@ -85,6 +85,7 @@ void on_music_link_fetched(HTTPResponse *res, void *user_data) {
         {PLATFORM_YOUTBUE, "YouTube", links.youtube_url},
         {PLATFORM_APPLE_MUSIC, "Apple Music", links.apple_music_url},
         {PLATFORM_TIDAL, "Tidal", links.tidal_url},
+        {PLATFORM_SOUNDCLOUD, "SoundCloud", links.soundcloud_url},
     };
 
     DiscordEmbedField fields[sizeof(platforms) / sizeof(platforms[0])] = {0};
