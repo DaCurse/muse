@@ -27,10 +27,10 @@ static const char *format_url(const char *fmt, ...) {
 
     va_start(ap, fmt);
     int n = vsnprintf(url_buffer + base_url_len,
-                      sizeof(url_buffer - base_url_len), fmt, ap);
+                      sizeof(url_buffer) - base_url_len, fmt, ap);
     va_end(ap);
 
-    if (n < 0 || (size_t)n >= sizeof(url_buffer - base_url_len)) {
+    if (n < 0 || (size_t)n >= sizeof(url_buffer) - base_url_len) {
         return NULL;
     }
 
