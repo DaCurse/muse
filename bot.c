@@ -111,6 +111,23 @@ void bot_tick(MuseBot *bot) {
 
 static void bot_send_identify(MuseBot *bot) {
     MuseTransport *ts = bot->ts;
+
+    int64_t now = (int64_t)time(NULL);
+    ActivityData activities[] = {
+        {.name = "Check me out on GitHub!",
+         .type = ACTIVITY_STREAMING,
+         .created_at = now,
+         .url = "https://github.com/DaCurse/muse"},
+    };
+
+    UpdatePresenceData presence = {
+        .since = now,
+        .status = StatusTypeStrings[STATUS_ONLINE],
+        .afk = false,
+        .activities = activities,
+        .activities_count = sizeof(activities) / sizeof(activities[0]),
+    };
+
     IdentifyEventData identify_data = {
         .token = bot->token,
         .properties =
@@ -120,6 +137,7 @@ static void bot_send_identify(MuseBot *bot) {
                 .device = "muse",
             },
         .intents = bot->intents,
+        .presence = &presence,
     };
 
     cJSON *identify_json = gateway_event_identify(&identify_data);

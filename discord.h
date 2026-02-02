@@ -9,20 +9,31 @@
 #define MAX_MESSAGE_EMBEDS (10)
 
 #define FOREACH_EMBED_TYPE(TYPE)                                               \
-    TYPE(EMBED_TYPE_RICH)                                                      \
-    TYPE(EMBED_TYPE_IMAGE)                                                     \
-    TYPE(EMBED_TYPE_VIDEO)                                                     \
-    TYPE(EMBED_TYPE_GIFV)                                                      \
-    TYPE(EMBED_TYPE_ARTICLE)                                                   \
-    TYPE(EMBED_TYPE_LINK)
+    TYPE(EMBED_TYPE_RICH, "rich")                                              \
+    TYPE(EMBED_TYPE_IMAGE, "image")                                            \
+    TYPE(EMBED_TYPE_VIDEO, "video")                                            \
+    TYPE(EMBED_TYPE_GIFV, "gifv")                                              \
+    TYPE(EMBED_TYPE_ARTICLE, "article")                                        \
+    TYPE(EMBED_TYPE_LINK, "link")
 
-#define GENERATE_ENUM(ENUM) ENUM,
-#define GENERATE_STRING(STRING) #STRING,
+#define FOREACH_STATUS_TYPE(TYPE)                                              \
+    TYPE(STATUS_ONLINE, "online")                                              \
+    TYPE(STATUS_DND, "dnd")                                                    \
+    TYPE(STATUS_IDLE, "idle")                                                  \
+    TYPE(STATUS_INVISIBLE, "invisible")                                        \
+    TYPE(STATUS_OFFLINE, "offline")
+
+#define GENERATE_ENUM(A, B) A,
+#define GENERATE_STRING(A, B) B,
 
 typedef enum { FOREACH_EMBED_TYPE(GENERATE_ENUM) } DiscordEmbedType;
 
+typedef enum { FOREACH_STATUS_TYPE(GENERATE_ENUM) } StatusType;
+
 static const char *DiscordEmbedTypeStrings[] = {
     FOREACH_EMBED_TYPE(GENERATE_STRING)};
+
+static const char *StatusTypeStrings[] = {FOREACH_STATUS_TYPE(GENERATE_STRING)};
 
 // https://discord.com/developers/docs/topics/opcodes-and-status-codes#gateway-gateway-opcodes
 typedef enum {
@@ -52,6 +63,33 @@ typedef struct {
     char *t;
 } GatewayEventPayload;
 
+// https://discord.com/developers/docs/events/gateway-events#activity-object-activity-types
+typedef enum {
+    ACTIVITY_PLAYING,
+    ACTIVITY_STREAMING,
+    ACTIVITY_LISTENING,
+    ACTIVITY_WATCHING,
+    ACTIVITY_CUSTOM,
+    ACTIVITY_COMPETING,
+} ActivityType;
+
+// https://discord.com/developers/docs/events/gateway-events#activity-object
+typedef struct {
+    const char *name;
+    ActivityType type;
+    int64_t created_at;
+    const char *url;
+} ActivityData;
+
+// https://discord.com/developers/docs/events/gateway-events#update-presence
+typedef struct {
+    int64_t since;
+    const char *status;
+    bool afk;
+    const ActivityData *activities;
+    int activities_count;
+} UpdatePresenceData;
+
 // https://discord.com/developers/docs/events/gateway-events#identify-identify-structure
 typedef struct {
     const char *token;
@@ -61,6 +99,7 @@ typedef struct {
         const char *device;
     } properties;
     int32_t intents;
+    const UpdatePresenceData *presence;
 } IdentifyEventData;
 
 typedef struct {
@@ -109,6 +148,7 @@ bool gateway_event_parse_hello(const cJSON *data, HelloEventData *out_data);
 
 cJSON *gateway_event_create(int32_t op, int32_t seq, const char *type,
                             cJSON *data_json);
+cJSON *gateway_event_update_presence(const UpdatePresenceData *data);
 cJSON *gateway_event_identify(const IdentifyEventData *data);
 cJSON *gateway_event_heartbeat(int32_t seq);
 

@@ -107,7 +107,7 @@ void on_music_link_fetched(HTTPResponse *res, void *user_data) {
     DiscordEmbed embed = {
         .title = "Music Links",
         .type = "rich",
-        .description = "Here are the available music links:",
+        .description = "Here are the available music links on other platforms:",
         .color = 0x35556e,
         .thumbnail = thumbnail,
         .image = NULL,

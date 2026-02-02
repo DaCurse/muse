@@ -90,9 +90,75 @@ cleanup:
     return NULL;
 }
 
+static cJSON *serialize_activity(const ActivityData *activity) {
+    cJSON *activity_json = NULL;
+
+    activity_json = cJSON_CreateObject();
+    if (!activity_json) {
+        fprintf(stderr, "Failed to create activity JSON object\n");
+        return NULL;
+    }
+
+    cJSON_AddStringToObject(activity_json, "name", activity->name);
+    cJSON_AddNumberToObject(activity_json, "type", activity->type);
+    cJSON_AddNumberToObject(activity_json, "created_at", activity->created_at);
+    if (activity->url) {
+        cJSON_AddStringToObject(activity_json, "url", activity->url);
+    }
+
+    return activity_json;
+}
+
+cJSON *gateway_event_update_presence(const UpdatePresenceData *data) {
+    cJSON *d_json = NULL;
+    cJSON *activities_json = NULL;
+    cJSON *payload_json = NULL;
+
+    d_json = cJSON_CreateObject();
+    if (!d_json) {
+        fprintf(stderr,
+                "Failed to create 'd' object for Update Presence payload\n");
+        goto cleanup;
+    }
+
+    cJSON_AddNumberToObject(d_json, "since", data->since);
+    cJSON_AddStringToObject(d_json, "status", data->status);
+    cJSON_AddBoolToObject(d_json, "afk", data->afk);
+
+    activities_json = cJSON_CreateArray();
+    if (!activities_json) {
+        fprintf(stderr, "Failed to create 'activities' array for Update "
+                        "Presence payload\n");
+        goto cleanup;
+    }
+
+    if (data->activities && data->activities_count > 0) {
+        for (int i = 0; i < data->activities_count; ++i) {
+            cJSON *activity_json = serialize_activity(&data->activities[i]);
+            if (!activity_json) {
+                goto cleanup;
+            }
+            cJSON_AddItemToArray(activities_json, activity_json);
+        }
+    }
+
+    cJSON_AddItemToObject(d_json, "activities", activities_json);
+
+    return d_json;
+
+cleanup:
+    if (activities_json)
+        cJSON_Delete(activities_json);
+    if (d_json)
+        cJSON_Delete(d_json);
+    return NULL;
+}
+
 cJSON *gateway_event_identify(const IdentifyEventData *data) {
     cJSON *d_json = NULL;
     cJSON *properties_json = NULL;
+    cJSON *presence_json = NULL;
+    cJSON *activities_json = NULL;
     cJSON *payload_json = NULL;
 
     d_json = cJSON_CreateObject();
@@ -118,6 +184,17 @@ cJSON *gateway_event_identify(const IdentifyEventData *data) {
     cJSON_AddItemToObject(d_json, "properties", properties_json);
     cJSON_AddNumberToObject(d_json, "intents", data->intents);
 
+    if (data->presence) {
+        presence_json = gateway_event_update_presence(data->presence);
+        if (!presence_json) {
+            fprintf(
+                stderr,
+                "Failed to create 'presence' object for Identify payload\n");
+            goto cleanup;
+        }
+        cJSON_AddItemToObject(d_json, "presence", presence_json);
+    }
+
     payload_json = gateway_event_create(SEND_OPCODE_IDENTIFY, -1, NULL, d_json);
     if (!payload_json) {
         goto cleanup;
@@ -126,6 +203,10 @@ cJSON *gateway_event_identify(const IdentifyEventData *data) {
     return payload_json;
 
 cleanup:
+    if (activities_json)
+        cJSON_Delete(activities_json);
+    if (presence_json)
+        cJSON_Delete(presence_json);
     if (properties_json)
         cJSON_Delete(properties_json);
     if (d_json)
