@@ -104,18 +104,24 @@ void on_music_link_fetched(HTTPResponse *res, void *user_data) {
         thumbnail.url = links.thumbnail_url;
     }
 
-    DiscordEmbed embed = {
-        .title = "Music Links",
-        .type = "rich",
-        .description = "Here are the available music links on other platforms:",
-        .color = 0x35556e,
-        .thumbnail = thumbnail,
-        .image = NULL,
-        .fields = {{0}},
-    };
+    DiscordEmbed embed = {0};
+    if (field_count > 0) {
+        embed.title = "Music Links";
+        embed.type = "rich";
+        embed.description =
+            "Here are the music links I found on other platforms:";
+        embed.color = 0x35556e;
+        embed.thumbnail = thumbnail;
 
-    for (int i = 0; i < field_count; i++) {
-        embed.fields[i] = fields[i];
+        for (int i = 0; i < field_count; i++) {
+            embed.fields[i] = fields[i];
+        }
+    } else {
+        embed.title = "Music Links";
+        embed.type = "rich";
+        embed.description = "I couldn't find any music links for "
+                            "this track on other platforms :pensive:";
+        embed.color = 0xc8393e;
     }
 
     DiscordCreateMessage message = {
