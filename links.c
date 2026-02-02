@@ -55,18 +55,26 @@ static bool match_music_link(const char *message, char **out_url,
     return false;
 }
 
-bool is_music_link(const char *message, char **out_url) {
-    if (match_music_link(message, out_url, SPOTIFY_PATTERNS)) {
-        return true;
-    }
-    if (match_music_link(message, out_url, YOUTUBE_PATTERNS)) {
-        return true;
-    }
-    if (match_music_link(message, out_url, APPLE_MUSIC_PATTERNS)) {
-        return true;
-    }
-    if (match_music_link(message, out_url, TIDAL_PATTERNS)) {
-        return true;
+typedef struct {
+    const char **patterns;
+    MusicPlatform platform;
+} PlatformPatternMapping;
+
+bool is_music_link(const char *message, MusicPlatform *out_platform,
+                   char **out_url) {
+    PlatformPatternMapping platform_checks[] = {
+        {SPOTIFY_PATTERNS, PLATFORM_SPOTIFY},
+        {YOUTUBE_PATTERNS, PLATFORM_YOUTBUE},
+        {APPLE_MUSIC_PATTERNS, PLATFORM_APPLE_MUSIC},
+        {TIDAL_PATTERNS, PLATFORM_TIDAL},
+    };
+
+    for (size_t i = 0; i < sizeof(platform_checks) / sizeof(platform_checks[0]);
+         i++) {
+        if (match_music_link(message, out_url, platform_checks[i].patterns)) {
+            *out_platform = platform_checks[i].platform;
+            return true;
+        }
     }
     return false;
 }
@@ -82,38 +90,30 @@ void fetch_music_links(MuseTransport *ts, const char *music_url,
     transport_http_get(ts, api_url, on_done, user_data);
 }
 
+typedef struct {
+    const char *key;
+    char **dest;
+} PlatformLinkMapping;
+
 void parse_music_links_response(cJSON *response_json, MusicLinks *out_links) {
     cJSON *platforms = cJSON_GetObjectItem(response_json, "linksByPlatform");
     if (platforms) {
-        cJSON *spotify = cJSON_GetObjectItem(platforms, "spotify");
-        if (spotify) {
-            cJSON *url = cJSON_GetObjectItem(spotify, "url");
-            if (url && url->valuestring) {
-                out_links->spotify_url = strdup(url->valuestring);
-            }
-        }
+        PlatformLinkMapping platform_map[] = {
+            {"spotify", &out_links->spotify_url},
+            {"youtube", &out_links->youtube_url},
+            {"appleMusic", &out_links->apple_music_url},
+            {"tidal", &out_links->tidal_url},
+        };
 
-        cJSON *youtube = cJSON_GetObjectItem(platforms, "youtube");
-        if (youtube) {
-            cJSON *url = cJSON_GetObjectItem(youtube, "url");
-            if (url && url->valuestring) {
-                out_links->youtube_url = strdup(url->valuestring);
-            }
-        }
-
-        cJSON *apple = cJSON_GetObjectItem(platforms, "appleMusic");
-        if (apple) {
-            cJSON *url = cJSON_GetObjectItem(apple, "url");
-            if (url && url->valuestring) {
-                out_links->apple_music_url = strdup(url->valuestring);
-            }
-        }
-
-        cJSON *tidal = cJSON_GetObjectItem(platforms, "tidal");
-        if (tidal) {
-            cJSON *url = cJSON_GetObjectItem(tidal, "url");
-            if (url && url->valuestring) {
-                out_links->tidal_url = strdup(url->valuestring);
+        for (size_t i = 0; i < sizeof(platform_map) / sizeof(platform_map[0]);
+             i++) {
+            cJSON *platform =
+                cJSON_GetObjectItem(platforms, platform_map[i].key);
+            if (platform) {
+                cJSON *url = cJSON_GetObjectItem(platform, "url");
+                if (url && url->valuestring) {
+                    *platform_map[i].dest = strdup(url->valuestring);
+                }
             }
         }
     }

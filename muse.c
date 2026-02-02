@@ -45,8 +45,15 @@ void on_disconnect(MuseTransport *ts) {
 
 typedef struct {
     MuseBot *bot;
+    MusicPlatform platform;
     char *channel_id;
 } MusicLinkContext;
+
+typedef struct {
+    MusicPlatform platform;
+    const char *name;
+    char *url;
+} PlatformMapping;
 
 void on_music_link_fetched(HTTPResponse *res, void *user_data) {
     MusicLinkContext *ctx = (MusicLinkContext *)user_data;
@@ -73,32 +80,23 @@ void on_music_link_fetched(HTTPResponse *res, void *user_data) {
     parse_music_links_response(json, &links);
     cJSON_Delete(json);
 
-    DiscordEmbedField fields[4] = {0};
+    PlatformMapping platforms[] = {
+        {PLATFORM_SPOTIFY, "Spotify", links.spotify_url},
+        {PLATFORM_YOUTBUE, "YouTube", links.youtube_url},
+        {PLATFORM_APPLE_MUSIC, "Apple Music", links.apple_music_url},
+        {PLATFORM_TIDAL, "Tidal", links.tidal_url},
+    };
+
+    DiscordEmbedField fields[sizeof(platforms) / sizeof(platforms[0])] = {0};
     int field_count = 0;
 
-    if (links.spotify_url) {
-        fields[field_count].name = "Spotify";
-        fields[field_count].value = links.spotify_url;
-        fields[field_count].inline_field = false;
-        field_count++;
-    }
-    if (links.youtube_url) {
-        fields[field_count].name = "YouTube";
-        fields[field_count].value = links.youtube_url;
-        fields[field_count].inline_field = false;
-        field_count++;
-    }
-    if (links.apple_music_url) {
-        fields[field_count].name = "Apple Music";
-        fields[field_count].value = links.apple_music_url;
-        fields[field_count].inline_field = false;
-        field_count++;
-    }
-    if (links.tidal_url) {
-        fields[field_count].name = "Tidal";
-        fields[field_count].value = links.tidal_url;
-        fields[field_count].inline_field = false;
-        field_count++;
+    for (size_t i = 0; i < sizeof(platforms) / sizeof(platforms[0]); i++) {
+        if (platforms[i].url && ctx->platform != platforms[i].platform) {
+            fields[field_count].name = platforms[i].name;
+            fields[field_count].value = platforms[i].url;
+            fields[field_count].inline_field = false;
+            field_count++;
+        }
     }
 
     DiscordEmbedImage thumbnail = {0};
@@ -116,7 +114,7 @@ void on_music_link_fetched(HTTPResponse *res, void *user_data) {
         .fields = {{0}},
     };
 
-    for (int i = 0; i < field_count; ++i) {
+    for (int i = 0; i < field_count; i++) {
         embed.fields[i] = fields[i];
     }
 
@@ -158,7 +156,7 @@ bool rate_limit(RateLimiter *limiter) {
 }
 
 void handle_music_link(MuseBot *bot, const char *channel_id,
-                       const char *music_url) {
+                       MusicPlatform platform, const char *music_url) {
     // Songlink's public API has a limit of 10 requests per minute
     static RateLimiter api_limiter = {0, .limit = 10};
 
@@ -169,6 +167,7 @@ void handle_music_link(MuseBot *bot, const char *channel_id,
     MusicLinkContext *ctx =
         (MusicLinkContext *)malloc(sizeof(MusicLinkContext));
     ctx->bot = bot;
+    ctx->platform = platform;
     ctx->channel_id = strdup(channel_id);
     fetch_music_links(bot->ts, music_url, on_music_link_fetched, ctx);
 }
@@ -201,11 +200,12 @@ void on_bot_message_create(MuseBot *bot, const char *event_name,
     const char *content = content_json->valuestring;
     const char *channel_id = channel_id_json->valuestring;
 
+    MusicPlatform platform;
     char *music_url = NULL;
-    if (is_music_link(content, &music_url)) {
+    if (is_music_link(content, &platform, &music_url)) {
         printf("Detected music link '%s' in channel %s by user %s\n", music_url,
                channel_id, author_id_json->valuestring);
-        handle_music_link(bot, channel_id, music_url);
+        handle_music_link(bot, channel_id, platform, music_url);
         free(music_url);
     }
 }

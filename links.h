@@ -11,8 +11,18 @@
 extern const char *SPOTIFY_PATTERNS[];
 extern const char *YOUTUBE_PATTERNS[];
 extern const char *APPLE_MUSIC_PATTERNS[];
+extern const char *TIDAL_PATTERNS[];
+
+typedef enum {
+    PLATFORM_SPOTIFY,
+    PLATFORM_YOUTBUE,
+    PLATFORM_APPLE_MUSIC,
+    PLATFORM_TIDAL,
+    PLATFORM_SOUNDCLOUD,
+} MusicPlatform;
 
 typedef struct {
+    MusicPlatform original;
     char *spotify_url;
     char *youtube_url;
     char *apple_music_url;
@@ -20,7 +30,8 @@ typedef struct {
     char *thumbnail_url;
 } MusicLinks;
 
-bool is_music_link(const char *message, char **out_url);
+bool is_music_link(const char *message, MusicPlatform *out_platform,
+                   char **out_url);
 void fetch_music_links(MuseTransport *ts, const char *music_url,
                        HTTPCallback on_done, void *user_data);
 void parse_music_links_response(cJSON *response_json, MusicLinks *out_links);
