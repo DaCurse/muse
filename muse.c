@@ -127,6 +127,46 @@ void on_music_link_fetched(HTTPResponse *res, void *user_data) {
     free(ctx);
 }
 
+typedef struct {
+    time_t last_fetch;
+    uint32_t counter;
+    uint32_t limit;
+} RateLimiter;
+
+bool rate_limit(RateLimiter *limiter) {
+    time_t now = time(NULL);
+
+    if (now - limiter->last_fetch >= 60) {
+        limiter->last_fetch = now;
+        limiter->counter = 0;
+    }
+
+    if (limiter->counter >= limiter->limit) {
+        printf("Rate limit exceeded. %lds left.\n",
+               60 - (now - limiter->last_fetch));
+        return false;
+    }
+
+    limiter->counter++;
+    return true;
+}
+
+void handle_music_link(MuseBot *bot, const char *channel_id,
+                       const char *music_url) {
+    // Songlink's public API has a limit of 10 requests per minute
+    static RateLimiter api_limiter = {0, .limit = 10};
+
+    if (!rate_limit(&api_limiter)) {
+        return;
+    }
+
+    MusicLinkContext *ctx =
+        (MusicLinkContext *)malloc(sizeof(MusicLinkContext));
+    ctx->bot = bot;
+    ctx->channel_id = strdup(channel_id);
+    fetch_music_links(bot->ts, music_url, on_music_link_fetched, ctx);
+}
+
 void on_bot_message_create(MuseBot *bot, const char *event_name,
                            const cJSON *data_json) {
     (void)event_name;
@@ -159,11 +199,7 @@ void on_bot_message_create(MuseBot *bot, const char *event_name,
     if (is_music_link(content, &music_url)) {
         printf("Detected music link '%s' in channel %s by user %s\n", music_url,
                channel_id, author_id_json->valuestring);
-        MusicLinkContext *ctx =
-            (MusicLinkContext *)malloc(sizeof(MusicLinkContext));
-        ctx->bot = bot;
-        ctx->channel_id = strdup(channel_id);
-        fetch_music_links(bot->ts, music_url, on_music_link_fetched, ctx);
+        handle_music_link(bot, channel_id, music_url);
         free(music_url);
     }
 }
