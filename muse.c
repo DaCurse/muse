@@ -73,7 +73,7 @@ void on_music_link_fetched(HTTPResponse *res, void *user_data) {
     parse_music_links_response(json, &links);
     cJSON_Delete(json);
 
-    DiscordEmbedField fields[3] = {0};
+    DiscordEmbedField fields[4] = {0};
     int field_count = 0;
 
     if (links.spotify_url) {
@@ -91,6 +91,12 @@ void on_music_link_fetched(HTTPResponse *res, void *user_data) {
     if (links.apple_music_url) {
         fields[field_count].name = "Apple Music";
         fields[field_count].value = links.apple_music_url;
+        fields[field_count].inline_field = false;
+        field_count++;
+    }
+    if (links.tidal_url) {
+        fields[field_count].name = "Tidal";
+        fields[field_count].value = links.tidal_url;
         fields[field_count].inline_field = false;
         field_count++;
     }

@@ -24,6 +24,12 @@ const char *APPLE_MUSIC_PATTERNS[] = {
     NULL,
 };
 
+const char *TIDAL_PATTERNS[] = {
+    "listen\\.tidal\\.com/track/([0-9]+)",
+    "tidal\\.com/(album/[0-9]+/)?track/([0-9]+)/?u?",
+    NULL,
+};
+
 static bool match_music_link(const char *message, char **out_url,
                              const char **patterns) {
     regex_t regex;
@@ -57,6 +63,9 @@ bool is_music_link(const char *message, char **out_url) {
         return true;
     }
     if (match_music_link(message, out_url, APPLE_MUSIC_PATTERNS)) {
+        return true;
+    }
+    if (match_music_link(message, out_url, TIDAL_PATTERNS)) {
         return true;
     }
     return false;
@@ -97,6 +106,14 @@ void parse_music_links_response(cJSON *response_json, MusicLinks *out_links) {
             cJSON *url = cJSON_GetObjectItem(apple, "url");
             if (url && url->valuestring) {
                 out_links->apple_music_url = strdup(url->valuestring);
+            }
+        }
+
+        cJSON *tidal = cJSON_GetObjectItem(platforms, "tidal");
+        if (tidal) {
+            cJSON *url = cJSON_GetObjectItem(tidal, "url");
+            if (url && url->valuestring) {
+                out_links->tidal_url = strdup(url->valuestring);
             }
         }
     }

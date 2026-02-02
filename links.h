@@ -16,6 +16,7 @@ typedef struct {
     char *spotify_url;
     char *youtube_url;
     char *apple_music_url;
+    char *tidal_url;
     char *thumbnail_url;
 } MusicLinks;
 
