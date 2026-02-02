@@ -13,10 +13,10 @@
 #define OS_NAME ("linux")
 #endif
 
-static char url_buffer[2048];
-static const size_t base_url_len = sizeof(API_BASE_URL) - 1;
-
 static const char *format_url(const char *fmt, ...) {
+    static char url_buffer[2048];
+    static const size_t base_url_len = sizeof(API_BASE_URL) - 1;
+
     va_list ap;
 
     if (base_url_len >= sizeof(url_buffer)) {
@@ -27,10 +27,10 @@ static const char *format_url(const char *fmt, ...) {
 
     va_start(ap, fmt);
     int n = vsnprintf(url_buffer + base_url_len,
-                      sizeof url_buffer - base_url_len, fmt, ap);
+                      sizeof(url_buffer - base_url_len), fmt, ap);
     va_end(ap);
 
-    if (n < 0 || (size_t)n >= sizeof url_buffer - base_url_len) {
+    if (n < 0 || (size_t)n >= sizeof(url_buffer - base_url_len)) {
         return NULL;
     }
 
@@ -178,7 +178,7 @@ static void bot_handle_invalid_session(MuseBot *bot, const cJSON *data_json) {
             bot->is_running = false;
             transport_ws_close(bot->ts);
         } else {
-            printf("Session expired. Clearing state for clean Identify...\n");
+            printf("Session expired. Re-identifying...\n");
             free(bot->session_id);
             bot->session_id = NULL;
             bot->last_seq = -1;
@@ -209,8 +209,9 @@ static void bot_handle_ready(MuseBot *bot, const cJSON *data_json) {
     cJSON *gateway_url_json =
         cJSON_GetObjectItem(data_json, "resume_gateway_url");
     if (gateway_url_json && cJSON_IsString(gateway_url_json)) {
-        bot_set_gateway_url(bot, gateway_url_json->valuestring);
-        printf("Updated gateway URL for resuming: %s\n", bot->gateway_url);
+        // Skip updating gateway url for now
+        // bot_set_gateway_url(bot, gateway_url_json->valuestring);
+        // printf("Updated gateway URL for resuming: %s\n", bot->gateway_url);
     }
 }
 

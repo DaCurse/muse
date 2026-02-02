@@ -15,6 +15,16 @@
 #define USER_AGENT ("Muse (https://github.com/DaCurse/muse, 1.0)")
 #define GATEWAY_URL ("wss://gateway.discord.gg/?v=10&encoding=json")
 
+#ifdef _WIN32
+#include <io.h>
+#define ISATTY _isatty
+#define FILENO _fileno
+#else
+#include <unistd.h>
+#define ISATTY isatty
+#define FILENO fileno
+#endif
+
 /**
  * GUILDS, GUILD_MESSAGES, MESSAGE_CONTENT
  * https://discord.com/developers/docs/events/gateway#list-of-intents
@@ -181,6 +191,10 @@ void handle_signal(int sig) {
 }
 
 int main() {
+    if (!ISATTY(FILENO(stdout))) {
+        setvbuf(stdout, NULL, _IOLBF, 0);
+    }
+
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
 

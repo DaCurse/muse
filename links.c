@@ -24,9 +24,6 @@ const char *APPLE_MUSIC_PATTERNS[] = {
     NULL,
 };
 
-static char encoded_url[2048];
-static char api_url[4096];
-
 static bool match_music_link(const char *message, char **out_url,
                              const char **patterns) {
     regex_t regex;
@@ -67,6 +64,9 @@ bool is_music_link(const char *message, char **out_url) {
 
 void fetch_music_links(MuseTransport *ts, const char *music_url,
                        HTTPCallback on_done, void *user_data) {
+    static char encoded_url[2048];
+    static char api_url[4096];
+
     transport_url_encode(music_url, encoded_url, sizeof(encoded_url));
     snprintf(api_url, sizeof(api_url), "%s%s", SONGLINK_API_BASE_URL,
              encoded_url);

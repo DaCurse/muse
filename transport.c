@@ -259,17 +259,20 @@ void transport_ws_open(MuseTransport *ts, const char *url) {
 }
 
 void transport_ws_close(MuseTransport *t) {
-    if (t->ws_easy) {
-        curl_multi_remove_handle(t->multi, t->ws_easy);
-        curl_easy_cleanup(t->ws_easy);
-        t->ws_easy = NULL;
-    }
     t->ws_handshake_done = false;
     t->ws_on_connect_fired = false;
     t->current_message.length = 0;
 
-    if (t->ws_callbacks.on_disconnect)
-        t->ws_callbacks.on_disconnect(t);
+    if (t->ws_easy) {
+        curl_multi_remove_handle(t->multi, t->ws_easy);
+        curl_easy_cleanup(t->ws_easy);
+        t->ws_easy = NULL;
+
+        // Only fire callback if we actually closed a connection
+        if (t->ws_callbacks.on_disconnect) {
+            t->ws_callbacks.on_disconnect(t);
+        }
+    }
 }
 
 CURLcode transport_ws_send(MuseTransport *ts, const uint8_t *data,
