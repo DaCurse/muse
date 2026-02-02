@@ -115,14 +115,9 @@ static void bot_send_identify(MuseBot *bot) {
     int64_t now = (int64_t)time(NULL);
     ActivityData activities[] = {
         {
-            .name = "to your music links",
+            .name = "your music links",
             .type = ACTIVITY_LISTENING,
             .created_at = now,
-            .url = NULL,
-            .buttons = {{
-                .label = "Check me out on GitHub!",
-                .url = "https://github.com/DaCurse/muse/",
-            }},
         },
     };
 
