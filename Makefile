@@ -22,7 +22,14 @@ san: CFLAGS += -g -O1 $(SAN_FLAGS)
 san: LDFLAGS += $(SAN_FLAGS)
 san: $(OUT)
 
-release: CFLAGS += -O2 -DNDEBUG
+release: CFLAGS += -O2 -DNDEBUG -flto -fno-plt -fstack-protector-strong
+release: LDFLAGS += -flto -Wl,-O1 -Wl,--as-needed
+ifeq ($(OS),Windows_NT)
+release: LDFLAGS += -Wl,--dynamicbase -Wl,--nxcompat
+else
+release: CFLAGS += -fPIE
+release: LDFLAGS += -pie -Wl,-z,relro -Wl,-z,now
+endif
 release: $(OUT)
 
 $(OUT): $(SRC)
