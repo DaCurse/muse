@@ -34,6 +34,7 @@ typedef struct {
     char *thumbnail_url;
 } MusicLinks;
 
+// Pointers in `link` or only valid within the callback
 typedef void (*MusicLinksCallback)(MusicLinks links, void *user_data);
 
 bool is_music_link(const char *message, MusicPlatform *out_platform,

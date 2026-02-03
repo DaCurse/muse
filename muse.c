@@ -203,7 +203,7 @@ void on_bot_message_create(MuseBot *bot, const char *event_name,
     const char *command = ";cachesummary";
     if (strlen(content) >= strlen(command) &&
         strncmp(content, command, strlen(command)) == 0) {
-        const size_t buffer_size = 2048;
+        const size_t buffer_size = 2000;
         char *summary_buffer = calloc(buffer_size, sizeof(*summary_buffer));
         cache_summary(summary_buffer, buffer_size);
 

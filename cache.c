@@ -1,6 +1,7 @@
 #include "cache.h"
 
 #include <assert.h>
+#include <stdio.h>
 
 #define CACHE_SIZE (4096)
 #define FNV_64_PRIME (1099511628211ULL)
@@ -42,9 +43,12 @@ void cache_put(const char *key, MusicLinks *value) {
     CacheSlot *slot = &cache[index];
 
     // Cache eviction strategy - index collision!
-    if (slot->value)
+    if (slot->value) {
+        printf("Evicted cached value at index %zu", index);
         free(slot->value);
+    }
 
+    printf("Cached '%s' at index %zu", key, index);
     slot->hash = hash;
     slot->value = value;
 }
@@ -63,79 +67,97 @@ void cache_summary(char *buffer, size_t buffer_size) {
         }
     }
 
-    pos += snprintf(buffer + pos, buffer_size - pos,
-                    "Cache: %zu/%zu slots (%.1f%%)\n", used, CACHE_SIZE,
-                    (used * 100.0) / CACHE_SIZE);
-
-    if (pos >= buffer_size - 1)
-        return;
+    pos += snprintf(buffer + pos, buffer_size - pos, "```\n");
 
     pos += snprintf(buffer + pos, buffer_size - pos,
-                    "Index          | Hash               | Links\n");
+                    "CACHE STATS\n"
+                    "Used: %zu/%zu (%.1f%%)\n\n",
+                    used, CACHE_SIZE, (used * 100.0) / CACHE_SIZE);
 
-    if (pos >= buffer_size - 1)
+    if (used == 0) {
+        pos += snprintf(buffer + pos, buffer_size - pos, "Cache is empty\n```");
         return;
+    }
 
-    pos += snprintf(buffer + pos, buffer_size - pos,
-                    "---------------|--------------------|-----------\n");
+    if (pos >= buffer_size - 100)
+        goto close_block;
 
-    if (pos >= buffer_size - 1)
-        return;
-
-    size_t range_start = (size_t)-1;
+    size_t empty_start = (size_t)-1;
+    size_t entries_shown = 0;
+    const size_t max_entries = 25;
 
     for (size_t i = 0; i <= CACHE_SIZE; i++) {
         bool occupied = (i < CACHE_SIZE && cache[i].value != NULL);
 
-        if (!occupied && range_start != (size_t)-1) {
-            // End of empty range, print it
-            if (range_start == i - 1) {
-                pos += snprintf(buffer + pos, buffer_size - pos,
-                                "%-14zu | %-18s | %s\n", range_start, "empty",
-                                "-");
-            } else {
-                pos += snprintf(buffer + pos, buffer_size - pos,
-                                "%-14zu | %-18s | %s\n", range_start, "empty",
-                                "-");
-            }
-            range_start = (size_t)-1;
-
-            if (pos >= buffer_size - 1)
-                return;
+        if (!occupied && empty_start == (size_t)-1) {
+            empty_start = i;
         }
 
         if (occupied) {
-            CacheSlot *slot = &cache[i];
+            if (empty_start != (size_t)-1) {
+                // Print empty range
+                if (entries_shown < max_entries && pos < buffer_size - 100) {
+                    if (i - empty_start == 1) {
+                        pos += snprintf(buffer + pos, buffer_size - pos,
+                                        "[%zu] empty\n", empty_start);
+                    } else {
+                        pos +=
+                            snprintf(buffer + pos, buffer_size - pos,
+                                     "[%zu-%zu] empty\n", empty_start, i - 1);
+                    }
+                    entries_shown++;
+                }
+                empty_start = (size_t)-1;
+            }
 
-            // Count non-null links
-            int link_count = 0;
-            if (slot->value->spotify_url)
-                link_count++;
-            if (slot->value->youtube_url)
-                link_count++;
-            if (slot->value->apple_music_url)
-                link_count++;
-            if (slot->value->tidal_url)
-                link_count++;
-            if (slot->value->soundcloud_url)
-                link_count++;
+            if (entries_shown >= max_entries) {
+                size_t remaining = 0;
+                for (size_t j = i; j < CACHE_SIZE; j++) {
+                    if (cache[j].value)
+                        remaining++;
+                }
+                pos += snprintf(buffer + pos, buffer_size - pos,
+                                "... %zu more slot%s\n", remaining,
+                                remaining == 1 ? "" : "s");
+                break;
+            }
 
-            pos += snprintf(buffer + pos, buffer_size - pos,
-                            "%-14zu | 0x%016llx | %d link%s\n", i,
-                            (unsigned long long)slot->hash, link_count,
-                            link_count == 1 ? "" : "s");
+            if (pos < buffer_size - 100) {
+                CacheSlot *slot = &cache[i];
+                int links = 0;
+                if (slot->value->spotify_url)
+                    links++;
+                if (slot->value->youtube_url)
+                    links++;
+                if (slot->value->apple_music_url)
+                    links++;
+                if (slot->value->tidal_url)
+                    links++;
+                if (slot->value->soundcloud_url)
+                    links++;
 
-            if (pos >= buffer_size - 1)
-                return;
-        } else if (range_start == (size_t)-1) {
-            // Start of empty range
-            range_start = i;
+                pos += snprintf(buffer + pos, buffer_size - pos,
+                                "[%zu] hash=%016llx links=%d\n", i,
+                                (unsigned long long)slot->hash, links);
+                entries_shown++;
+            }
         }
     }
 
-    if (used == 0) {
-        pos += snprintf(buffer + pos, buffer_size - pos, "(cache empty)\n");
+    // Handle trailing empty range
+    if (empty_start != (size_t)-1 && entries_shown < max_entries &&
+        pos < buffer_size - 100) {
+        if (CACHE_SIZE - empty_start == 1) {
+            pos += snprintf(buffer + pos, buffer_size - pos, "[%zu] empty\n",
+                            empty_start);
+        } else {
+            pos += snprintf(buffer + pos, buffer_size - pos,
+                            "[%zu-%zu] empty\n", empty_start, CACHE_SIZE - 1);
+        }
     }
+
+close_block:
+    snprintf(buffer + pos, buffer_size - pos, "```");
 }
 
 void cache_destroy() {

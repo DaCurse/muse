@@ -136,6 +136,7 @@ static void parse_music_links_response(cJSON *response_json,
 }
 
 typedef struct {
+    const char *music_url;
     void *user_data;
     MusicLinksCallback user_cb;
 } FetchContext;
@@ -159,33 +160,15 @@ static void fetch_callback(HTTPResponse *res, void *user_data) {
         return;
     }
 
-    MusicLinks *base_links = calloc(1, sizeof(*base_links));
-    parse_music_links_response(json, base_links);
+    MusicLinks *links = calloc(1, sizeof(*links));
+    parse_music_links_response(json, links);
     cJSON_Delete(json);
 
-    MusicPlatform platform_enums[] = {
-        PLATFORM_SPOTIFY, PLATFORM_YOUTUBE,    PLATFORM_APPLE_MUSIC,
-        PLATFORM_TIDAL,   PLATFORM_SOUNDCLOUD,
-    };
-    char **platform_urls[] = {
-        &base_links->spotify_url,     &base_links->youtube_url,
-        &base_links->apple_music_url, &base_links->tidal_url,
-        &base_links->soundcloud_url,
-    };
+    cache_put(ctx->music_url, links);
+    ctx->user_cb(*links, ctx->user_data);
 
-    for (int i = 0; i < PLATFORM_COUNT; i++) {
-        if (*platform_urls[i]) {
-            MusicLinks *links = calloc(1, sizeof(*links));
-            memcpy(links, base_links, sizeof(*base_links));
-            links->original = platform_enums[i];
-            cache_put(*platform_urls[i], links);
-        }
-    }
-
-    ctx->user_cb(*base_links, ctx->user_data);
-
-    music_links_free(base_links);
-    free(base_links);
+    music_links_free(links);
+    free(links);
     free(ctx);
 }
 
@@ -196,6 +179,7 @@ void fetch_music_links(MuseTransport *ts, const char *music_url,
 
     MusicLinks *hit = cache_get(music_url);
     if (hit) {
+        printf("Cache hit for '%s'", music_url);
         on_done(*hit, user_data);
         return;
     }
@@ -209,6 +193,7 @@ void fetch_music_links(MuseTransport *ts, const char *music_url,
         fprintf(stderr, "Failed to allocate fetch context");
         return;
     }
+    ctx->music_url = music_url;
     ctx->user_data = user_data;
     ctx->user_cb = on_done;
     transport_http_get(ts, api_url, fetch_callback, ctx);
