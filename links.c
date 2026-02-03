@@ -169,6 +169,7 @@ static void fetch_callback(HTTPResponse *res, void *user_data) {
 
     music_links_free(links);
     free(links);
+    free(ctx->music_url);
     free(ctx);
 }
 
@@ -189,11 +190,11 @@ void fetch_music_links(MuseTransport *ts, const char *music_url,
              encoded_url);
 
     FetchContext *ctx = (FetchContext *)malloc(sizeof(*ctx));
-    if(!ctx) {
+    if (!ctx) {
         fprintf(stderr, "Failed to allocate fetch context");
         return;
     }
-    ctx->music_url = music_url;
+    ctx->music_url = strdup(music_url);
     ctx->user_data = user_data;
     ctx->user_cb = on_done;
     transport_http_get(ts, api_url, fetch_callback, ctx);
