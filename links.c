@@ -243,5 +243,4 @@ void music_links_free(MusicLinks *links) {
             *urls[i] = NULL;
         }
     }
-    free(links);
 }
