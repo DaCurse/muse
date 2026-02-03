@@ -136,7 +136,7 @@ static void parse_music_links_response(cJSON *response_json,
 }
 
 typedef struct {
-    const char *music_url;
+    char *music_url;
     void *user_data;
     MusicLinksCallback user_cb;
 } FetchContext;
