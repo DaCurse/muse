@@ -142,6 +142,7 @@ void on_bot_message_create(MuseBot *bot, const char *event_name,
                            const cJSON *data_json) {
     (void)event_name;
 
+    // TODO: Bot should parse this for us and pass a struct in the callback
     const cJSON *author_json =
         cJSON_GetObjectItemCaseSensitive(data_json, "author");
 
@@ -173,11 +174,9 @@ void on_bot_message_create(MuseBot *bot, const char *event_name,
                channel_id, author_id_json->valuestring);
         handle_music_link(bot, channel_id, platform, music_url);
         free(music_url);
-        return;
-    }
-
-    if (strlen(content) >= strlen(CMD_CACHE_SUMMARY) &&
-        strncmp(content, CMD_CACHE_SUMMARY, strlen(CMD_CACHE_SUMMARY)) == 0) {
+    } else if (strlen(content) >= strlen(CMD_CACHE_SUMMARY) &&
+               strncmp(content, CMD_CACHE_SUMMARY, strlen(CMD_CACHE_SUMMARY)) ==
+                   0) {
         char *summary_buffer =
             calloc(CMD_CACHE_SUMMARY_BUFFER_SIZE, sizeof(*summary_buffer));
         cache_summary(summary_buffer, CMD_CACHE_SUMMARY_BUFFER_SIZE);
