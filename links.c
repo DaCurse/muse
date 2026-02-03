@@ -3,6 +3,7 @@
 #include <regex.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "cache.h"
 
@@ -171,16 +172,46 @@ static void fetch_callback(HTTPResponse *res, void *user_data) {
     free(ctx);
 }
 
-void fetch_music_links(MuseTransport *ts, const char *music_url,
+typedef struct {
+    time_t last_fetch;
+    uint32_t counter;
+    uint32_t limit;
+} RateLimiter;
+
+static bool rate_limit(RateLimiter *limiter) {
+    time_t now = time(NULL);
+
+    if (now - limiter->last_fetch >= 60) {
+        limiter->last_fetch = now;
+        limiter->counter = 0;
+    }
+
+    if (limiter->counter >= limiter->limit) {
+        printf("Rate limit exceeded. %lds left.\n",
+               60 - (now - limiter->last_fetch));
+        return false;
+    }
+
+    limiter->counter++;
+    return true;
+}
+
+bool fetch_music_links(MuseTransport *ts, const char *music_url,
                        MusicLinksCallback on_done, void *user_data) {
     static char encoded_url[2048];
     static char api_url[4096];
+    // Songlink's public API has a limit of 10 requests per minute
+    static RateLimiter api_limiter = {0, .limit = 10};
 
     MusicLinks *hit = cache_get(music_url);
     if (hit) {
         printf("Cache hit for '%s'\n", music_url);
         on_done(*hit, user_data);
-        return;
+        return true;
+    }
+
+    if (!rate_limit(&api_limiter)) {
+        return false;
     }
 
     transport_url_encode(music_url, encoded_url, sizeof(encoded_url));
@@ -190,25 +221,22 @@ void fetch_music_links(MuseTransport *ts, const char *music_url,
     FetchContext *ctx = (FetchContext *)malloc(sizeof(*ctx));
     if (!ctx) {
         fprintf(stderr, "Failed to allocate fetch context");
-        return;
+        return false;
     }
     ctx->music_url = strdup(music_url);
     ctx->user_data = user_data;
     ctx->user_cb = on_done;
     printf("Fetching '%s' on Songlink API\n", music_url);
     transport_http_get(ts, api_url, fetch_callback, ctx);
+    return true;
 }
 
 void music_links_free(MusicLinks *links) {
-    const char **urls[] = {
-        &links->spotify_url,
-        &links->youtube_url,
-        &links->apple_music_url,
-        &links->tidal_url,
-        &links->soundcloud_url,
-        &links->thumbnail_url,
+    char **urls[] = {
+        &links->spotify_url, &links->youtube_url,    &links->apple_music_url,
+        &links->tidal_url,   &links->soundcloud_url, &links->thumbnail_url,
     };
-    
+
     for (size_t i = 0; i < sizeof(urls) / sizeof(urls[0]); i++) {
         if (*urls[i]) {
             free(*urls[i]);

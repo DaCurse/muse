@@ -54,6 +54,7 @@ void cache_put(const char *key, MusicLinks *value) {
     slot->value = value;
 }
 
+// Disclaimer: Claude wrote this monstrosity
 void cache_summary(char *buffer, size_t buffer_size) {
     if (!buffer || buffer_size == 0)
         return;

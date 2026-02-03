@@ -39,7 +39,8 @@ typedef void (*MusicLinksCallback)(MusicLinks links, void *user_data);
 
 bool is_music_link(const char *message, MusicPlatform *out_platform,
                    char **out_url);
-void fetch_music_links(MuseTransport *ts, const char *music_url,
+// Returns `true` if fetch issued, `false` if rate limited
+bool fetch_music_links(MuseTransport *ts, const char *music_url,
                        MusicLinksCallback on_done, void *user_data);
 void music_links_free(MusicLinks *links);
 
