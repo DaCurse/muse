@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cache.h"
+
 #define SONGLINK_API_BASE_URL ("https://api.song.link/v1-alpha.1/links?url=")
 
 const char *SPOTIFY_PATTERNS[] = {
@@ -69,7 +71,7 @@ bool is_music_link(const char *message, MusicPlatform *out_platform,
                    char **out_url) {
     PlatformPatternMapping platform_checks[] = {
         {SPOTIFY_PATTERNS, PLATFORM_SPOTIFY},
-        {YOUTUBE_PATTERNS, PLATFORM_YOUTBUE},
+        {YOUTUBE_PATTERNS, PLATFORM_YOUTUBE},
         {APPLE_MUSIC_PATTERNS, PLATFORM_APPLE_MUSIC},
         {TIDAL_PATTERNS, PLATFORM_TIDAL},
         {SOUNDCLOUD_PATTERNS, PLATFORM_SOUNDCLOUD},
@@ -85,23 +87,13 @@ bool is_music_link(const char *message, MusicPlatform *out_platform,
     return false;
 }
 
-void fetch_music_links(MuseTransport *ts, const char *music_url,
-                       HTTPCallback on_done, void *user_data) {
-    static char encoded_url[2048];
-    static char api_url[4096];
-
-    transport_url_encode(music_url, encoded_url, sizeof(encoded_url));
-    snprintf(api_url, sizeof(api_url), "%s%s", SONGLINK_API_BASE_URL,
-             encoded_url);
-    transport_http_get(ts, api_url, on_done, user_data);
-}
-
 typedef struct {
     const char *key;
     char **dest;
 } PlatformLinkMapping;
 
-void parse_music_links_response(cJSON *response_json, MusicLinks *out_links) {
+static void parse_music_links_response(cJSON *response_json,
+                                       MusicLinks *out_links) {
     cJSON *platforms = cJSON_GetObjectItem(response_json, "linksByPlatform");
     if (platforms) {
         PlatformLinkMapping platform_map[] = {
@@ -141,6 +133,85 @@ void parse_music_links_response(cJSON *response_json, MusicLinks *out_links) {
             }
         }
     }
+}
+
+typedef struct {
+    void *user_data;
+    MusicLinksCallback user_cb;
+} FetchContext;
+
+static void fetch_callback(HTTPResponse *res, void *user_data) {
+    FetchContext *ctx = (FetchContext *)user_data;
+
+    if (res->result != CURLE_OK) {
+        fprintf(stderr, "Failed to fetch music links: %s\n",
+                curl_easy_strerror(res->result));
+        return;
+    }
+
+    cJSON *json = cJSON_ParseWithLength((const char *)res->data, res->length);
+    if (!json) {
+        const char *error_ptr = cJSON_GetErrorPtr();
+        if (error_ptr) {
+            fprintf(stderr, "Failed to parse music links JSON: %s\n",
+                    error_ptr);
+        }
+        return;
+    }
+
+    MusicLinks *base_links = calloc(1, sizeof(*base_links));
+    parse_music_links_response(json, base_links);
+    cJSON_Delete(json);
+
+    MusicPlatform platform_enums[] = {
+        PLATFORM_SPOTIFY, PLATFORM_YOUTUBE,    PLATFORM_APPLE_MUSIC,
+        PLATFORM_TIDAL,   PLATFORM_SOUNDCLOUD,
+    };
+    char **platform_urls[] = {
+        &base_links->spotify_url,     &base_links->youtube_url,
+        &base_links->apple_music_url, &base_links->tidal_url,
+        &base_links->soundcloud_url,
+    };
+
+    for (int i = 0; i < PLATFORM_COUNT; i++) {
+        if (*platform_urls[i]) {
+            MusicLinks *links = calloc(1, sizeof(*links));
+            memcpy(links, base_links, sizeof(*base_links));
+            links->original = platform_enums[i];
+            cache_put(*platform_urls[i], links);
+        }
+    }
+
+    ctx->user_cb(*base_links, ctx->user_data);
+
+    music_links_free(base_links);
+    free(base_links);
+    free(ctx);
+}
+
+void fetch_music_links(MuseTransport *ts, const char *music_url,
+                       MusicLinksCallback on_done, void *user_data) {
+    static char encoded_url[2048];
+    static char api_url[4096];
+
+    MusicLinks *hit = cache_get(music_url);
+    if (hit) {
+        on_done(*hit, user_data);
+        return;
+    }
+
+    transport_url_encode(music_url, encoded_url, sizeof(encoded_url));
+    snprintf(api_url, sizeof(api_url), "%s%s", SONGLINK_API_BASE_URL,
+             encoded_url);
+
+    FetchContext *ctx = (FetchContext *)malloc(sizeof(*ctx));
+    if(!ctx) {
+        fprintf(stderr, "Failed to allocate fetch context");
+        return;
+    }
+    ctx->user_data = user_data;
+    ctx->user_cb = on_done;
+    transport_http_get(ts, api_url, fetch_callback, ctx);
 }
 
 void music_links_free(MusicLinks *links) {

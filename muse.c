@@ -8,6 +8,7 @@
 #include <cjson/cJSON.h>
 
 #include "bot.h"
+#include "cache.h"
 #include "discord.h"
 #include "links.h"
 #include "transport.h"
@@ -55,34 +56,14 @@ typedef struct {
     char *url;
 } PlatformMapping;
 
-void on_music_link_fetched(HTTPResponse *res, void *user_data) {
+void on_music_link_fetched(MusicLinks links, void *user_data) {
     MusicLinkContext *ctx = (MusicLinkContext *)user_data;
     MuseBot *bot = ctx->bot;
     const char *channel_id = ctx->channel_id;
 
-    if (res->result != CURLE_OK) {
-        fprintf(stderr, "Failed to fetch music links: %s\n",
-                curl_easy_strerror(res->result));
-        return;
-    }
-
-    cJSON *json = cJSON_ParseWithLength((const char *)res->data, res->length);
-    if (!json) {
-        const char *error_ptr = cJSON_GetErrorPtr();
-        if (error_ptr) {
-            fprintf(stderr, "Failed to parse music links JSON: %s\n",
-                    error_ptr);
-        }
-        return;
-    }
-
-    MusicLinks links = {0};
-    parse_music_links_response(json, &links);
-    cJSON_Delete(json);
-
     PlatformMapping platforms[] = {
         {PLATFORM_SPOTIFY, "Spotify", links.spotify_url},
-        {PLATFORM_YOUTBUE, "YouTube", links.youtube_url},
+        {PLATFORM_YOUTUBE, "YouTube", links.youtube_url},
         {PLATFORM_APPLE_MUSIC, "Apple Music", links.apple_music_url},
         {PLATFORM_TIDAL, "Tidal", links.tidal_url},
         {PLATFORM_SOUNDCLOUD, "SoundCloud", links.soundcloud_url},
@@ -127,13 +108,12 @@ void on_music_link_fetched(HTTPResponse *res, void *user_data) {
 
     DiscordCreateMessage message = {
         .content = "",
-        .nonce = (int32_t)time(NULL),
+        .nonce = time(NULL),
         .embeds = {embed},
     };
 
     bot_rest_send_message(bot, channel_id, &message);
 
-    music_links_free(&links);
     free(ctx->channel_id);
     free(ctx);
 }
@@ -173,6 +153,9 @@ void handle_music_link(MuseBot *bot, const char *channel_id,
 
     MusicLinkContext *ctx =
         (MusicLinkContext *)malloc(sizeof(MusicLinkContext));
+    if (!ctx) {
+        fprintf(stderr, "Failed to allocate music link context");
+    }
     ctx->bot = bot;
     ctx->platform = platform;
     ctx->channel_id = strdup(channel_id);
@@ -214,6 +197,20 @@ void on_bot_message_create(MuseBot *bot, const char *event_name,
                channel_id, author_id_json->valuestring);
         handle_music_link(bot, channel_id, platform, music_url);
         free(music_url);
+        return;
+    }
+
+    const char *command = ";cachesummary";
+    if (strlen(content) >= strlen(command) &&
+        strncmp(content, command, strlen(command)) == 0) {
+        const size_t buffer_size = 2048;
+        char *summary_buffer = calloc(buffer_size, sizeof(*summary_buffer));
+        cache_summary(summary_buffer, buffer_size);
+
+        DiscordCreateMessage message = {0};
+        message.content = summary_buffer;
+        message.nonce = time(NULL);
+        bot_rest_send_message(bot, channel_id, &message);
     }
 }
 
@@ -275,6 +272,7 @@ int main() {
     printf("Exiting...\n");
     bot_destroy(&bot);
     transport_destroy(&ts);
+    cache_destroy();
 
     return 0;
 }

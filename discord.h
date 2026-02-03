@@ -140,7 +140,7 @@ typedef struct {
 // https://discord.com/developers/docs/resources/message#create-message
 typedef struct {
     const char *content;
-    int32_t nonce;
+    int64_t nonce;
     const DiscordEmbed embeds[MAX_MESSAGE_EMBEDS];
 } DiscordCreateMessage;
 
