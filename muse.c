@@ -127,6 +127,7 @@ void handle_music_link(MuseBot *bot, const char *channel_id,
         (MusicLinkContext *)malloc(sizeof(MusicLinkContext));
     if (!ctx) {
         fprintf(stderr, "Failed to allocate music link context");
+        return;
     }
     ctx->bot = bot;
     ctx->platform = platform;

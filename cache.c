@@ -29,9 +29,9 @@ MusicLinks *cache_get(const char *key) {
 
     uint64_t hash = fnv1a_64_hash(key);
     size_t index = hash & (CACHE_SIZE - 1);
-    CacheSlot slot = cache[index];
+    CacheSlot *slot = &cache[index];
 
-    return slot.hash == hash ? slot.value : NULL;
+    return slot->hash == hash ? slot->value : NULL;
 }
 
 void cache_put(const char *key, MusicLinks *value) {
@@ -78,8 +78,10 @@ void cache_summary(char *buffer, size_t buffer_size) {
 
     // Show up to 40 entries
     size_t shown = 0;
-    for (size_t i = 0; i < CACHE_SIZE && shown < 40 && pos < buffer_size - 100;
-         i++) {
+    for (size_t i = 0; i < CACHE_SIZE && shown < 40; i++) {
+        if (buffer_size - pos < 100)
+            break;
+
         if (!cache[i].value)
             continue;
 
@@ -110,11 +112,13 @@ void cache_summary(char *buffer, size_t buffer_size) {
 
 void cache_destroy() {
     for (size_t i = 0; i < CACHE_SIZE; i++) {
-        CacheSlot slot = cache[i];
-        if (slot.value) {
-            music_links_free(slot.value);
-            free(slot.value);
+        CacheSlot *slot = &cache[i];
+        if (slot->value) {
+            music_links_free(slot->value);
+            free(slot->value);
         }
+        slot->value = NULL;
+        slot->hash = 0;
     }
 }
 

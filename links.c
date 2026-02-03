@@ -148,7 +148,7 @@ static void fetch_callback(HTTPResponse *res, void *user_data) {
     if (res->result != CURLE_OK) {
         fprintf(stderr, "Failed to fetch music links: %s\n",
                 curl_easy_strerror(res->result));
-        return;
+        goto cleanup;
     }
 
     cJSON *json = cJSON_ParseWithLength((const char *)res->data, res->length);
@@ -158,7 +158,7 @@ static void fetch_callback(HTTPResponse *res, void *user_data) {
             fprintf(stderr, "Failed to parse music links JSON: %s\n",
                     error_ptr);
         }
-        return;
+        goto cleanup;
     }
 
     MusicLinks *links = calloc(1, sizeof(*links));
@@ -168,8 +168,10 @@ static void fetch_callback(HTTPResponse *res, void *user_data) {
     cache_put(ctx->music_url, links);
     ctx->user_cb(*links, ctx->user_data);
 
+cleanup:
     free(ctx->music_url);
     free(ctx);
+    return;
 }
 
 typedef struct {
