@@ -200,20 +200,20 @@ void fetch_music_links(MuseTransport *ts, const char *music_url,
 }
 
 void music_links_free(MusicLinks *links) {
-    if (links->spotify_url) {
-        free(links->spotify_url);
-        links->spotify_url = NULL;
+    const char **urls[] = {
+        &links->spotify_url,
+        &links->youtube_url,
+        &links->apple_music_url,
+        &links->tidal_url,
+        &links->soundcloud_url,
+        &links->thumbnail_url,
+    };
+    
+    for (size_t i = 0; i < sizeof(urls) / sizeof(urls[0]); i++) {
+        if (*urls[i]) {
+            free(*urls[i]);
+            *urls[i] = NULL;
+        }
     }
-    if (links->youtube_url) {
-        free(links->youtube_url);
-        links->youtube_url = NULL;
-    }
-    if (links->apple_music_url) {
-        free(links->apple_music_url);
-        links->apple_music_url = NULL;
-    }
-    if (links->thumbnail_url) {
-        free(links->thumbnail_url);
-        links->thumbnail_url = NULL;
-    }
+    free(links);
 }
