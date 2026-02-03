@@ -45,6 +45,7 @@ void cache_put(const char *key, MusicLinks *value) {
     // Cache eviction strategy - index collision!
     if (slot->value) {
         printf("Evicted cached value at index %zu", index);
+        music_links_free(slot->value);
         free(slot->value);
     }
 

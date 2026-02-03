@@ -167,8 +167,6 @@ static void fetch_callback(HTTPResponse *res, void *user_data) {
     cache_put(ctx->music_url, links);
     ctx->user_cb(*links, ctx->user_data);
 
-    music_links_free(links);
-    free(links);
     free(ctx->music_url);
     free(ctx);
 }
