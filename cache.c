@@ -153,8 +153,8 @@ void cache_summary(char *buffer, size_t buffer_size) {
             pos += snprintf(buffer + pos, buffer_size - pos, "[%zu] empty\n",
                             empty_start);
         } else {
-            pos += snprintf(buffer + pos, buffer_size - pos,
-                            "[%zu-%u] empty\n", empty_start, CACHE_SIZE - 1);
+            pos += snprintf(buffer + pos, buffer_size - pos, "[%zu-%u] empty\n",
+                            empty_start, CACHE_SIZE - 1);
         }
     }
 
