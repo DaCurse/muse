@@ -44,12 +44,12 @@ void cache_put(const char *key, MusicLinks *value) {
 
     // Cache eviction strategy - index collision!
     if (slot->value) {
-        printf("Evicted cached value at index %zu", index);
+        printf("Evicted cached value at index %zu\n", index);
         music_links_free(slot->value);
         free(slot->value);
     }
 
-    printf("Cached '%s' at index %zu", key, index);
+    printf("Cached '%s' at index %zu\n", key, index);
     slot->hash = hash;
     slot->value = value;
 }
@@ -72,7 +72,7 @@ void cache_summary(char *buffer, size_t buffer_size) {
 
     pos += snprintf(buffer + pos, buffer_size - pos,
                     "CACHE STATS\n"
-                    "Used: %zu/%zu (%.1f%%)\n\n",
+                    "Used: %zu/%u (%.1f%%)\n\n",
                     used, CACHE_SIZE, (used * 100.0) / CACHE_SIZE);
 
     if (used == 0) {

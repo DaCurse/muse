@@ -211,6 +211,7 @@ void on_bot_message_create(MuseBot *bot, const char *event_name,
         message.content = summary_buffer;
         message.nonce = time(NULL);
         bot_rest_send_message(bot, channel_id, &message);
+        free(summary_buffer);
     }
 }
 

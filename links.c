@@ -178,7 +178,7 @@ void fetch_music_links(MuseTransport *ts, const char *music_url,
 
     MusicLinks *hit = cache_get(music_url);
     if (hit) {
-        printf("Cache hit for '%s'", music_url);
+        printf("Cache hit for '%s'\n", music_url);
         on_done(*hit, user_data);
         return;
     }
@@ -195,6 +195,7 @@ void fetch_music_links(MuseTransport *ts, const char *music_url,
     ctx->music_url = strdup(music_url);
     ctx->user_data = user_data;
     ctx->user_cb = on_done;
+    printf("Fetching '%s' on Songlink API\n", music_url);
     transport_http_get(ts, api_url, fetch_callback, ctx);
 }
 
