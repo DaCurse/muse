@@ -68,7 +68,7 @@ void cache_summary(char *buffer, size_t buffer_size) {
     size_t pos = 0;
     pos += snprintf(
         buffer + pos, buffer_size - pos,
-        "```\nCache: %zu used, %zu empty (%zu total, %.1f%% full)\n", used,
+        "```\nCache: %zu used, %zu empty (%u total, %.1f%% full)\n", used,
         CACHE_SIZE - used, CACHE_SIZE, (used * 100.0) / CACHE_SIZE);
 
     if (used == 0) {
