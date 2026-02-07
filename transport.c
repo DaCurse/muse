@@ -1,6 +1,7 @@
 #include "transport.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
@@ -70,6 +71,10 @@ int socket_callback(CURL *curl, curl_socket_t socket, int action, void *userp,
 
     if (!ctx) {
         ctx = calloc(1, sizeof(*ctx));
+        if (!ctx) {
+            fprintf(stderr, "Failed to allocate socket context\n");
+            return -1;
+        }
         ctx->sockfd = socket;
         curl_multi_assign(ts->multi, socket, ctx);
     }
@@ -320,10 +325,20 @@ void transport_url_encode(const char *input, char *output, size_t output_size) {
     }
 }
 
-void transport_http_get(MuseTransport *ts, const char *url,
+bool transport_http_get(MuseTransport *ts, const char *url,
                         HTTPCallback on_done, void *user_data) {
     CURL *easy = curl_easy_init();
+    if (!easy) {
+        fprintf(stderr, "Failed to initialize CURL\n");
+        return false;
+    }
+
     RequestContext *ctx = calloc(1, sizeof(RequestContext));
+    if (!ctx) {
+        fprintf(stderr, "Failed to allocate request context\n");
+        goto cleanup_curl;
+    }
+
     ctx->on_done = on_done;
     ctx->user_data = user_data;
 
@@ -338,19 +353,38 @@ void transport_http_get(MuseTransport *ts, const char *url,
     curl_easy_setopt(easy, CURLOPT_PRIVATE, ctx);
 
     curl_multi_add_handle(ts->multi, easy);
+    return true;
+
+cleanup_curl:
+    curl_easy_cleanup(easy);
+    return false;
 }
 
-void transport_http_post(MuseTransport *ts, const char *url,
+bool transport_http_post(MuseTransport *ts, const char *url,
                          const uint8_t *body, size_t content_length,
                          const char *content_type,
                          const struct curl_slist *extra_headers,
                          HTTPCallback on_done, void *user_data) {
     CURL *easy = curl_easy_init();
+    if (!easy) {
+        fprintf(stderr, "Failed to initialize CURL\n");
+        return false;
+    }
+
     RequestContext *ctx = calloc(1, sizeof(RequestContext));
+    if (!ctx) {
+        fprintf(stderr, "Failed to allocate request context\n");
+        goto cleanup_curl;
+    }
+
     ctx->on_done = on_done;
     ctx->user_data = user_data;
 
     ctx->request_body = malloc(content_length);
+    if (!ctx->request_body) {
+        fprintf(stderr, "Failed to allocate request body\n");
+        goto cleanup_ctx;
+    }
     memcpy(ctx->request_body, body, content_length);
 
     char header[256];
@@ -377,6 +411,13 @@ void transport_http_post(MuseTransport *ts, const char *url,
     curl_easy_setopt(easy, CURLOPT_PRIVATE, ctx);
 
     curl_multi_add_handle(ts->multi, easy);
+    return true;
+
+cleanup_ctx:
+    free(ctx);
+cleanup_curl:
+    curl_easy_cleanup(easy);
+    return false;
 }
 
 void transport_destroy(MuseTransport *ts) {

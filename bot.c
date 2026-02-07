@@ -316,9 +316,11 @@ static void bot_rest_send_json(MuseBot *bot, const char *url,
     struct curl_slist *headers = NULL;
     headers = curl_slist_append(headers, auth_header);
 
-    transport_http_post(bot->ts, url, (const uint8_t *)body_str,
-                        strlen(body_str), "application/json", headers, on_done,
-                        bot);
+    if (!transport_http_post(bot->ts, url, (const uint8_t *)body_str,
+                             strlen(body_str), "application/json", headers,
+                             on_done, bot)) {
+        fprintf(stderr, "Failed to send HTTP POST request\n");
+    }
 
     curl_slist_free_all(headers);
     free(body_str);

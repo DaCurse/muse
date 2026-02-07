@@ -7,7 +7,7 @@
 #include <stdint.h>
 
 #ifndef _WIN32
-#include <unistd.h> // for close(2)
+#include <unistd.h>  // for close(2)
 #else
 #define _WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -25,7 +25,7 @@ typedef struct {
 typedef struct {
     uint8_t *data;
     size_t length;
-    // status code is a long in curl
+    // status code is a long in cURL
     int64_t status;
     CURLcode result;
 } HTTPResponse;
@@ -70,9 +70,9 @@ CURLcode transport_ws_send(MuseTransport *ts, const uint8_t *data,
                            size_t length);
 CURLcode transport_ws_send_json(MuseTransport *ts, const cJSON *data);
 void transport_url_encode(const char *input, char *output, size_t output_size);
-void transport_http_get(MuseTransport *ts, const char *url,
+bool transport_http_get(MuseTransport *ts, const char *url,
                         HTTPCallback on_done, void *user_data);
-void transport_http_post(MuseTransport *ts, const char *url,
+bool transport_http_post(MuseTransport *ts, const char *url,
                          const uint8_t *body, size_t content_length,
                          const char *content_type,
                          const struct curl_slist *extra_headers,

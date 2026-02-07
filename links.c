@@ -270,12 +270,24 @@ bool fetch_music_links(MuseTransport *ts, const char *music_url,
         return false;
     }
     ctx->music_url = strdup(music_url);
+    if (!ctx->music_url) {
+        fprintf(stderr, "Failed to duplicate music URL\n");
+        goto cleanup_ctx;
+    }
     ctx->original_platform = original_platform;
     ctx->user_data = user_data;
     ctx->user_cb = on_done;
     printf("Fetching '%s' on Songlink API\n", music_url);
-    transport_http_get(ts, api_url, fetch_callback, ctx);
+    if (!transport_http_get(ts, api_url, fetch_callback, ctx)) {
+        goto cleanup_url;
+    }
     return true;
+
+cleanup_url:
+    free(ctx->music_url);
+cleanup_ctx:
+    free(ctx);
+    return false;
 }
 
 MusicLinksData *music_links_data_create(void) {

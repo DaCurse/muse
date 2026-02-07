@@ -138,11 +138,20 @@ void handle_music_link(MuseBot *bot, const char *channel_id,
     }
     ctx->bot = bot;
     ctx->channel_id = strdup(channel_id);
+    if (!ctx->channel_id) {
+        fprintf(stderr, "Failed to duplicate channel ID\n");
+        goto cleanup_ctx;
+    }
     if (!fetch_music_links(bot->ts, music_url, on_music_link_fetched, ctx)) {
         // We got rate limited, callback won't fire, so free the context
-        free(ctx->channel_id);
-        free(ctx);
+        goto cleanup_channel_id;
     }
+    return;
+
+cleanup_channel_id:
+    free(ctx->channel_id);
+cleanup_ctx:
+    free(ctx);
 }
 
 void on_bot_message_create(MuseBot *bot, const char *event_name,
@@ -185,6 +194,10 @@ void on_bot_message_create(MuseBot *bot, const char *event_name,
                    0) {
         char *summary_buffer =
             calloc(CMD_CACHE_SUMMARY_BUFFER_SIZE, sizeof(*summary_buffer));
+        if (!summary_buffer) {
+            fprintf(stderr, "Failed to allocate cache summary buffer\n");
+            return;
+        }
         cache_summary(summary_buffer, CMD_CACHE_SUMMARY_BUFFER_SIZE);
 
         DiscordCreateMessage message = {
