@@ -101,7 +101,10 @@ void on_music_link_fetched(MusicLinks links, void *user_data) {
         for (int i = 0; i < field_count; i++) {
             embed.fields[i] = fields[i];
         }
-    } else {
+
+    } else if (links.original != PLATFORM_YOUTUBE) {
+        // Don't send an error for youtube since links are likely to not be
+        // songs
         embed.title = "Music Links";
         embed.type = "rich";
         embed.description = "I couldn't find any music links for "
@@ -109,12 +112,14 @@ void on_music_link_fetched(MusicLinks links, void *user_data) {
         embed.color = 0xc8393e;
     }
 
-    DiscordCreateMessage message = {
-        .content = "",
-        .nonce = time(NULL),
-        .embeds = {embed},
-    };
-    bot_rest_send_message(bot, channel_id, &message);
+    if (embed.title) {
+        DiscordCreateMessage message = {
+            .content = "",
+            .nonce = time(NULL),
+            .embeds = {embed},
+        };
+        bot_rest_send_message(bot, channel_id, &message);
+    }
 
     free(ctx->channel_id);
     free(ctx);
