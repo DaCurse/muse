@@ -45,8 +45,7 @@ void cache_put(const char *key, MusicLinks *value) {
     // Cache eviction strategy - index collision!
     if (slot->value) {
         printf("Evicted cached value at index %zu\n", index);
-        music_links_free(slot->value);
-        free(slot->value);
+        music_links_release(slot->value);
     }
 
     printf("Cached '%s' at index %zu\n", key, index);
@@ -86,19 +85,19 @@ void cache_summary(char *buffer, size_t buffer_size) {
             continue;
 
         int links = 0;
-        if (cache[i].value->spotify_url)
+        if (cache[i].value->data->spotify_url)
             links++;
-        if (cache[i].value->youtube_url)
+        if (cache[i].value->data->youtube_url)
             links++;
-        if (cache[i].value->apple_music_url)
+        if (cache[i].value->data->apple_music_url)
             links++;
-        if (cache[i].value->tidal_url)
+        if (cache[i].value->data->tidal_url)
             links++;
-        if (cache[i].value->soundcloud_url)
+        if (cache[i].value->data->soundcloud_url)
             links++;
 
-        pos += snprintf(buffer + pos, buffer_size - pos, "[%zu] %016llx (%d)\n",
-                        i, (unsigned long long)cache[i].hash, links);
+        pos += snprintf(buffer + pos, buffer_size - pos, "[%zu] %016llx (%d links, %d refs)\n",
+                        i, (unsigned long long)cache[i].hash, links, cache[i].value->data->ref_count);
         shown++;
     }
 
@@ -114,8 +113,7 @@ void cache_destroy() {
     for (size_t i = 0; i < CACHE_SIZE; i++) {
         CacheSlot *slot = &cache[i];
         if (slot->value) {
-            music_links_free(slot->value);
-            free(slot->value);
+            music_links_release(slot->value);
         }
         slot->value = NULL;
         slot->hash = 0;

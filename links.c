@@ -81,7 +81,9 @@ bool is_music_link(const char *message, MusicPlatform *out_platform,
     for (size_t i = 0; i < sizeof(platform_checks) / sizeof(platform_checks[0]);
          i++) {
         if (match_music_link(message, out_url, platform_checks[i].patterns)) {
-            *out_platform = platform_checks[i].platform;
+            if (out_platform) {
+                *out_platform = platform_checks[i].platform;
+            }
             return true;
         }
     }
@@ -91,18 +93,18 @@ bool is_music_link(const char *message, MusicPlatform *out_platform,
 typedef struct {
     const char *key;
     char **dest;
-} PlatformLinkMapping;
+} PlatformKeyLinkMapping;
 
 static void parse_music_links_response(cJSON *response_json,
-                                       MusicLinks *out_links) {
+                                       MusicLinksData *out_data) {
     cJSON *platforms = cJSON_GetObjectItem(response_json, "linksByPlatform");
     if (platforms) {
-        PlatformLinkMapping platform_map[] = {
-            {"spotify", &out_links->spotify_url},
-            {"youtube", &out_links->youtube_url},
-            {"appleMusic", &out_links->apple_music_url},
-            {"tidal", &out_links->tidal_url},
-            {"soundcloud", &out_links->soundcloud_url},
+        PlatformKeyLinkMapping platform_map[] = {
+            {"spotify", &out_data->spotify_url},
+            {"youtube", &out_data->youtube_url},
+            {"appleMusic", &out_data->apple_music_url},
+            {"tidal", &out_data->tidal_url},
+            {"soundcloud", &out_data->soundcloud_url},
         };
 
         for (size_t i = 0; i < sizeof(platform_map) / sizeof(platform_map[0]);
@@ -129,7 +131,7 @@ static void parse_music_links_response(cJSON *response_json,
             if (entity) {
                 cJSON *thumb = cJSON_GetObjectItem(entity, "thumbnailUrl");
                 if (thumb && thumb->valuestring) {
-                    out_links->thumbnail_url = strdup(thumb->valuestring);
+                    out_data->thumbnail_url = strdup(thumb->valuestring);
                 }
             }
         }
@@ -138,9 +140,15 @@ static void parse_music_links_response(cJSON *response_json,
 
 typedef struct {
     char *music_url;
+    MusicPlatform original_platform;
     void *user_data;
     MusicLinksCallback user_cb;
 } FetchContext;
+
+typedef struct {
+    char *link;
+    MusicPlatform platform;
+} PlatformLinkMapping;
 
 static void fetch_callback(HTTPResponse *res, void *user_data) {
     FetchContext *ctx = (FetchContext *)user_data;
@@ -161,10 +169,37 @@ static void fetch_callback(HTTPResponse *res, void *user_data) {
         goto cleanup;
     }
 
-    MusicLinks *links = calloc(1, sizeof(*links));
-    parse_music_links_response(json, links);
+    MusicLinksData *data = music_links_data_create();
+    parse_music_links_response(json, data);
     cJSON_Delete(json);
 
+    PlatformLinkMapping platform_map[] = {
+        {data->spotify_url, PLATFORM_SPOTIFY},
+        {data->youtube_url, PLATFORM_YOUTUBE},
+        {data->apple_music_url, PLATFORM_APPLE_MUSIC},
+        {data->tidal_url, PLATFORM_TIDAL},
+        {data->soundcloud_url, PLATFORM_SOUNDCLOUD},
+    };
+
+    for (size_t i = 0; i < sizeof(platform_map) / sizeof(platform_map[0]);
+         i++) {
+        if (platform_map[i].platform == ctx->original_platform ||
+            platform_map[i].link == NULL) {
+            continue;
+        }
+
+        char *url = NULL;
+        MusicPlatform platform;
+        // Cache the links for each other platform as well
+        if (is_music_link(platform_map[i].link, &platform, &url)) {
+            MusicLinks *alt_links =
+                music_links_create(platform, music_links_data_retain(data));
+            cache_put(url, alt_links);
+            free(url);
+        }
+    }
+
+    MusicLinks *links = music_links_create(ctx->original_platform, data);
     cache_put(ctx->music_url, links);
     ctx->user_cb(*links, ctx->user_data);
 
@@ -216,6 +251,15 @@ bool fetch_music_links(MuseTransport *ts, const char *music_url,
         return false;
     }
 
+    // Determine the original platform from the URL
+    MusicPlatform original_platform;
+    char *temp_url = NULL;
+    if (!is_music_link(music_url, &original_platform, &temp_url)) {
+        fprintf(stderr, "Invalid music URL: %s\n", music_url);
+        return false;
+    }
+    free(temp_url);
+
     transport_url_encode(music_url, encoded_url, sizeof(encoded_url));
     snprintf(api_url, sizeof(api_url), "%s%s", SONGLINK_API_BASE_URL,
              encoded_url);
@@ -226,6 +270,7 @@ bool fetch_music_links(MuseTransport *ts, const char *music_url,
         return false;
     }
     ctx->music_url = strdup(music_url);
+    ctx->original_platform = original_platform;
     ctx->user_data = user_data;
     ctx->user_cb = on_done;
     printf("Fetching '%s' on Songlink API\n", music_url);
@@ -233,10 +278,18 @@ bool fetch_music_links(MuseTransport *ts, const char *music_url,
     return true;
 }
 
-void music_links_free(MusicLinks *links) {
+MusicLinksData *music_links_data_create(void) {
+    MusicLinksData *data = calloc(1, sizeof(*data));
+    if (data) {
+        data->ref_count = 1;
+    }
+    return data;
+}
+
+void music_links_data_free(MusicLinksData *data) {
     char **urls[] = {
-        &links->spotify_url, &links->youtube_url,    &links->apple_music_url,
-        &links->tidal_url,   &links->soundcloud_url, &links->thumbnail_url,
+        &data->spotify_url, &data->youtube_url,    &data->apple_music_url,
+        &data->tidal_url,   &data->soundcloud_url, &data->thumbnail_url,
     };
 
     for (size_t i = 0; i < sizeof(urls) / sizeof(urls[0]); i++) {
@@ -245,4 +298,40 @@ void music_links_free(MusicLinks *links) {
             *urls[i] = NULL;
         }
     }
+}
+
+MusicLinksData *music_links_data_retain(MusicLinksData *data) {
+    if (data) {
+        data->ref_count++;
+    }
+    return data;
+}
+
+void music_links_data_release(MusicLinksData *data) {
+    if (!data)
+        return;
+
+    data->ref_count--;
+    if (data->ref_count <= 0) {
+        music_links_data_free(data);
+        free(data);
+    }
+}
+
+MusicLinks *music_links_create(MusicPlatform platform, MusicLinksData *data) {
+    MusicLinks *links = malloc(sizeof(*links));
+    if (links) {
+        links->original_platform = platform;
+        links->data = data;
+    }
+    return links;
+}
+
+
+void music_links_release(MusicLinks *links) {
+    if (!links)
+        return;
+
+    music_links_data_release(links->data);
+    free(links);
 }
