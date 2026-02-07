@@ -119,6 +119,8 @@ void on_music_link_fetched(MusicLinks links, void *user_data) {
             .embeds = {embed},
         };
         bot_rest_send_message(bot, channel_id, &message);
+    } else {
+	printf("YouTube link with no results detected, skipping sending message.\n");
     }
 
     free(ctx->channel_id);
