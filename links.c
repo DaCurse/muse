@@ -1,5 +1,7 @@
+
 #include "links.h"
 
+#include <assert.h>
 #include <regex.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,125 +9,130 @@
 
 #include "cache.h"
 
+#define PATTERN(p) {.pattern = p, .regex = {0}, .compiled = false}
+
 #define SONGLINK_API_BASE_URL ("https://api.song.link/v1-alpha.1/links?url=")
 
-const char *SPOTIFY_PATTERNS[] = {
-    "open\\.spotify\\.com/(track|album|playlist)/([a-zA-Z0-9]+)",
-    "spotify:track:([a-zA-Z0-9]+)",
-    NULL,
-};
-
-const char *YOUTUBE_PATTERNS[] = {
-    "youtube\\.com/watch\\?v=([a-zA-Z0-9_-]+)",
-    "youtu\\.be/([a-zA-Z0-9_-]+)",
-    "music\\.youtube\\.com/watch\\?v=([a-zA-Z0-9_-]+)",
-    NULL,
-};
-
-const char *APPLE_MUSIC_PATTERNS[] = {
-    "music\\.apple\\.com/[a-z]{2}/(album|playlist|song)/[^/]+/([0-9]+)",
-    NULL,
-};
-
-const char *TIDAL_PATTERNS[] = {
-    "listen\\.tidal\\.com/track/([0-9]+)",
-    "tidal\\.com/(album/[0-9]+/)?track/([0-9]+)/?u?",
-    NULL,
-};
-
-const char *SOUNDCLOUD_PATTERNS[] = {
-    "soundcloud.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)",
-    NULL,
-};
-
-static bool match_music_link(const char *message, char **out_url,
-                             const char **patterns) {
+typedef struct {
+    const char *pattern;
     regex_t regex;
-    regmatch_t matches[1];
+    bool compiled;
+} Pattern;
 
-    for (int i = 0; patterns[i] != NULL; i++) {
-        if (regcomp(&regex, patterns[i], REG_EXTENDED | REG_ICASE) == 0) {
-            if (regexec(&regex, message, 1, matches, 0) == 0) {
-                int start = matches[0].rm_so;
-                int end = matches[0].rm_eo;
-                size_t len = end - start;
-                *out_url = malloc(len + 1);
-                if (*out_url) {
-                    memcpy(*out_url, message + start, len);
-                    (*out_url)[len] = '\0';
-                }
-                regfree(&regex);
-                return true;
+static Pattern SPOTIFY_PATTERNS[] = {
+    PATTERN("open\\.spotify\\.com/(track|album|playlist)/([a-zA-Z0-9]+)"),
+    {0},
+};
+
+static Pattern YOUTUBE_PATTERNS[] = {
+    PATTERN("youtube\\.com/watch\\?v=([a-zA-Z0-9_-]+)"),
+    PATTERN("youtu\\.be/([a-zA-Z0-9_-]+)"),
+    PATTERN("music\\.youtube\\.com/watch\\?v=([a-zA-Z0-9_-]+)"),
+    {0},
+};
+
+static Pattern APPLE_MUSIC_PATTERNS[] = {
+    PATTERN("music\\.apple\\.com/[a-z]{2}/(album|playlist|song)/[^/]+/([0-9]+)"),
+    {0},
+};
+
+static Pattern TIDAL_PATTERNS[] = {
+    PATTERN("listen\\.tidal\\.com/track/([0-9]+)"),
+    PATTERN("tidal\\.com/(album/[0-9]+/)?track/([0-9]+)/?u?"),
+    {0},
+};
+
+static Pattern SOUNDCLOUD_PATTERNS[] = {
+    PATTERN("soundcloud.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)"),
+    {0},
+};
+
+static Pattern *PLATFORM_PATTERNS[] = {
+    [PLATFORM_SPOTIFY] = SPOTIFY_PATTERNS,
+    [PLATFORM_YOUTUBE] = YOUTUBE_PATTERNS,
+    [PLATFORM_APPLE_MUSIC] = APPLE_MUSIC_PATTERNS,
+    [PLATFORM_TIDAL] = TIDAL_PATTERNS,
+    [PLATFORM_SOUNDCLOUD] = SOUNDCLOUD_PATTERNS,
+};
+
+bool links_init() {
+    for (int i = 0; i < PLATFORM_COUNT; i++) {
+        for (Pattern *p = PLATFORM_PATTERNS[i]; p->pattern != NULL; p++) {
+            if (regcomp(&p->regex, p->pattern, REG_EXTENDED | REG_ICASE) == 0) {
+                p->compiled = true;
+            } else {
+                return false;
             }
-            regfree(&regex);
         }
     }
-    return false;
+
+    return true;
 }
 
-typedef struct {
-    const char **patterns;
-    MusicPlatform platform;
-} PlatformPatternMapping;
+static bool match_music_link(const char *message, char **out_url, const Pattern *patterns) {
+    regmatch_t matches[1];
 
-bool is_music_link(const char *message, MusicPlatform *out_platform,
-                   char **out_url) {
-    PlatformPatternMapping platform_checks[] = {
-        {SPOTIFY_PATTERNS, PLATFORM_SPOTIFY},
-        {YOUTUBE_PATTERNS, PLATFORM_YOUTUBE},
-        {APPLE_MUSIC_PATTERNS, PLATFORM_APPLE_MUSIC},
-        {TIDAL_PATTERNS, PLATFORM_TIDAL},
-        {SOUNDCLOUD_PATTERNS, PLATFORM_SOUNDCLOUD},
-    };
+    for (int i = 0; patterns[i].pattern != NULL; i++) {
+        assert(patterns[i].compiled);
 
-    for (size_t i = 0; i < sizeof(platform_checks) / sizeof(platform_checks[0]);
-         i++) {
-        if (match_music_link(message, out_url, platform_checks[i].patterns)) {
-            if (out_platform) {
-                *out_platform = platform_checks[i].platform;
+        if (regexec(&patterns[i].regex, message, 1, matches, 0) == 0) {
+            int start = matches[0].rm_so;
+            int end = matches[0].rm_eo;
+            size_t len = end - start;
+            *out_url = malloc(len + 1);
+            if (*out_url) {
+                memcpy(*out_url, message + start, len);
+                (*out_url)[len] = '\0';
             }
             return true;
         }
     }
+
     return false;
 }
 
-typedef struct {
-    const char *key;
-    char **dest;
-} PlatformKeyLinkMapping;
+bool is_music_link(const char *message, MusicPlatform *out_platform, char **out_url) {
 
-static void parse_music_links_response(cJSON *response_json,
-                                       MusicLinksData *out_data) {
+    for (size_t i = 0; i < PLATFORM_COUNT; i++) {
+        if (match_music_link(message, out_url, PLATFORM_PATTERNS[i])) {
+            if (out_platform) {
+                *out_platform = i;
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void parse_music_links_response(cJSON *response_json, MusicLinksData *out_data) {
+
+    static const char *platform_url_keys[] = {
+        [PLATFORM_SPOTIFY] = "spotify",
+        [PLATFORM_YOUTUBE] = "youtube",
+        [PLATFORM_APPLE_MUSIC] = "appleMusic",
+        [PLATFORM_TIDAL] = "tidal",
+        [PLATFORM_SOUNDCLOUD] = "soundcloud",
+    };
+
     cJSON *platforms = cJSON_GetObjectItem(response_json, "linksByPlatform");
     if (platforms) {
-        PlatformKeyLinkMapping platform_map[] = {
-            {"spotify", &out_data->spotify_url},
-            {"youtube", &out_data->youtube_url},
-            {"appleMusic", &out_data->apple_music_url},
-            {"tidal", &out_data->tidal_url},
-            {"soundcloud", &out_data->soundcloud_url},
-        };
 
-        for (size_t i = 0; i < sizeof(platform_map) / sizeof(platform_map[0]);
-             i++) {
-            cJSON *platform =
-                cJSON_GetObjectItem(platforms, platform_map[i].key);
+        for (size_t i = 0; i < PLATFORM_COUNT; i++) {
+            cJSON *platform = cJSON_GetObjectItem(platforms, platform_url_keys[i]);
             if (platform) {
                 cJSON *url = cJSON_GetObjectItem(platform, "url");
                 if (url && url->valuestring) {
-                    *platform_map[i].dest = strdup(url->valuestring);
+                    out_data->urls[i] = strdup(url->valuestring);
                 }
             }
         }
     }
 
-    cJSON *entity_id_item =
-        cJSON_GetObjectItem(response_json, "entityUniqueId");
+    cJSON *entity_id_item = cJSON_GetObjectItem(response_json, "entityUniqueId");
     if (entity_id_item && entity_id_item->valuestring) {
         const char *entity_id = entity_id_item->valuestring;
-        cJSON *entities =
-            cJSON_GetObjectItem(response_json, "entitiesByUniqueId");
+        cJSON *entities = cJSON_GetObjectItem(response_json, "entitiesByUniqueId");
         if (entities) {
             cJSON *entity = cJSON_GetObjectItem(entities, entity_id);
             if (entity) {
@@ -145,17 +152,11 @@ typedef struct {
     MusicLinksCallback user_cb;
 } FetchContext;
 
-typedef struct {
-    char *link;
-    MusicPlatform platform;
-} PlatformLinkMapping;
-
 static void fetch_callback(HTTPResponse *res, void *user_data) {
     FetchContext *ctx = (FetchContext *)user_data;
 
     if (res->result != CURLE_OK) {
-        fprintf(stderr, "Failed to fetch music links: %s\n",
-                curl_easy_strerror(res->result));
+        fprintf(stderr, "Failed to fetch music links: %s\n", curl_easy_strerror(res->result));
         goto cleanup;
     }
 
@@ -163,8 +164,7 @@ static void fetch_callback(HTTPResponse *res, void *user_data) {
     if (!json) {
         const char *error_ptr = cJSON_GetErrorPtr();
         if (error_ptr) {
-            fprintf(stderr, "Failed to parse music links JSON: %s\n",
-                    error_ptr);
+            fprintf(stderr, "Failed to parse music links JSON: %s\n", error_ptr);
         }
         goto cleanup;
     }
@@ -173,27 +173,15 @@ static void fetch_callback(HTTPResponse *res, void *user_data) {
     parse_music_links_response(json, data);
     cJSON_Delete(json);
 
-    PlatformLinkMapping platform_map[] = {
-        {data->spotify_url, PLATFORM_SPOTIFY},
-        {data->youtube_url, PLATFORM_YOUTUBE},
-        {data->apple_music_url, PLATFORM_APPLE_MUSIC},
-        {data->tidal_url, PLATFORM_TIDAL},
-        {data->soundcloud_url, PLATFORM_SOUNDCLOUD},
-    };
-
-    for (size_t i = 0; i < sizeof(platform_map) / sizeof(platform_map[0]);
-         i++) {
-        if (platform_map[i].platform == ctx->original_platform ||
-            platform_map[i].link == NULL) {
+    for (size_t i = 0; i < PLATFORM_COUNT; i++) {
+        if (i == ctx->original_platform || !data->urls[i])
             continue;
-        }
 
         char *url = NULL;
         MusicPlatform platform;
         // Cache the links for each other platform as well
-        if (is_music_link(platform_map[i].link, &platform, &url)) {
-            MusicLinks *alt_links =
-                music_links_create(platform, music_links_data_retain(data));
+        if (is_music_link(data->urls[i], &platform, &url)) {
+            MusicLinks *alt_links = music_links_create(platform, music_links_data_retain(data));
             cache_put(url, alt_links);
             free(url);
         }
@@ -224,8 +212,7 @@ static bool rate_limit(RateLimiter *limiter) {
     }
 
     if (limiter->counter >= limiter->limit) {
-        printf("Rate limit exceeded. %lds left.\n",
-               60 - (now - limiter->last_fetch));
+        printf("Rate limit exceeded. %lds left.\n", 60 - (now - limiter->last_fetch));
         return false;
     }
 
@@ -233,8 +220,10 @@ static bool rate_limit(RateLimiter *limiter) {
     return true;
 }
 
-bool fetch_music_links(MuseTransport *ts, const char *music_url,
-                       MusicLinksCallback on_done, void *user_data) {
+bool fetch_music_links(MuseTransport *ts,
+                       const char *music_url,
+                       MusicLinksCallback on_done,
+                       void *user_data) {
     static char encoded_url[2048];
     static char api_url[4096];
     // Songlink's public API has a limit of 10 requests per minute
@@ -261,8 +250,7 @@ bool fetch_music_links(MuseTransport *ts, const char *music_url,
     free(temp_url);
 
     transport_url_encode(music_url, encoded_url, sizeof(encoded_url));
-    snprintf(api_url, sizeof(api_url), "%s%s", SONGLINK_API_BASE_URL,
-             encoded_url);
+    snprintf(api_url, sizeof(api_url), "%s%s", SONGLINK_API_BASE_URL, encoded_url);
 
     FetchContext *ctx = (FetchContext *)malloc(sizeof(*ctx));
     if (!ctx) {
@@ -299,16 +287,15 @@ MusicLinksData *music_links_data_create(void) {
 }
 
 void music_links_data_free(MusicLinksData *data) {
-    char **urls[] = {
-        &data->spotify_url, &data->youtube_url,    &data->apple_music_url,
-        &data->tidal_url,   &data->soundcloud_url, &data->thumbnail_url,
-    };
-
-    for (size_t i = 0; i < sizeof(urls) / sizeof(urls[0]); i++) {
-        if (*urls[i]) {
-            free(*urls[i]);
-            *urls[i] = NULL;
+    for (size_t i = 0; i < PLATFORM_COUNT; i++) {
+        if (data->urls[i]) {
+            free(data->urls[i]);
+            data->urls[i] = NULL;
         }
+    }
+
+    if (data->thumbnail_url) {
+        free(data->thumbnail_url);
     }
 }
 
@@ -339,11 +326,18 @@ MusicLinks *music_links_create(MusicPlatform platform, MusicLinksData *data) {
     return links;
 }
 
-
 void music_links_release(MusicLinks *links) {
     if (!links)
         return;
 
     music_links_data_release(links->data);
     free(links);
+}
+
+void links_destroy() {
+    for (int i = 0; i < PLATFORM_COUNT; i++) {
+        for (Pattern *p = PLATFORM_PATTERNS[i]; p->pattern != NULL; p++) {
+            regfree(&p->regex);
+        }
+    }
 }

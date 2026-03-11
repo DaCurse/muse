@@ -9,32 +9,28 @@
 #define MAX_MESSAGE_EMBEDS (10)
 #define MAX_ACTIVITY_BUTTONS (2)
 
-#define FOREACH_EMBED_TYPE(TYPE)                                               \
-    TYPE(EMBED_TYPE_RICH, "rich")                                              \
-    TYPE(EMBED_TYPE_IMAGE, "image")                                            \
-    TYPE(EMBED_TYPE_VIDEO, "video")                                            \
-    TYPE(EMBED_TYPE_GIFV, "gifv")                                              \
-    TYPE(EMBED_TYPE_ARTICLE, "article")                                        \
-    TYPE(EMBED_TYPE_LINK, "link")
+#if 0
+typedef enum {
+    EMBED_TYPE_RICH,
+    EMBED_TYPE_IMAGE,
+    EMBED_TYPE_VIDEO,
+    EMBED_TYPE_GIFV,
+    EMBED_TYPE_ARTICLE,
+    EMBED_TYPE_LINK,
+} DiscordEmbedType;
 
-#define FOREACH_STATUS_TYPE(TYPE)                                              \
-    TYPE(STATUS_ONLINE, "online")                                              \
-    TYPE(STATUS_DND, "dnd")                                                    \
-    TYPE(STATUS_IDLE, "idle")                                                  \
-    TYPE(STATUS_INVISIBLE, "invisible")                                        \
-    TYPE(STATUS_OFFLINE, "offline")
+extern const char *DiscordEmbedTypeStrings[];
+#endif
 
-#define GENERATE_ENUM(A, B) A,
-#define GENERATE_STRING(A, B) B,
+typedef enum {
+    STATUS_ONLINE,
+    STATUS_DND,
+    STATUS_IDLE,
+    STATUS_INVISIBLE,
+    STATUS_OFFLINE,
+} StatusType;
 
-typedef enum { FOREACH_EMBED_TYPE(GENERATE_ENUM) } DiscordEmbedType;
-
-typedef enum { FOREACH_STATUS_TYPE(GENERATE_ENUM) } StatusType;
-
-static const char *DiscordEmbedTypeStrings[] = {
-    FOREACH_EMBED_TYPE(GENERATE_STRING)};
-
-static const char *StatusTypeStrings[] = {FOREACH_STATUS_TYPE(GENERATE_STRING)};
+extern const char *StatusTypeStrings[];
 
 // https://discord.com/developers/docs/topics/opcodes-and-status-codes#gateway-gateway-opcodes
 typedef enum {
@@ -144,8 +140,7 @@ typedef struct {
     const DiscordEmbed embeds[MAX_MESSAGE_EMBEDS];
 } DiscordCreateMessage;
 
-bool gateway_event_parse(uint8_t *data, size_t length,
-                         GatewayEventPayload *out_payload);
+bool gateway_event_parse(uint8_t *data, size_t length, GatewayEventPayload *out_payload);
 void gateway_event_cleanup(GatewayEventPayload *payload);
 
 // Receive Events
@@ -154,8 +149,7 @@ bool gateway_event_parse_hello(const cJSON *data, HelloEventData *out_data);
 
 // Send Events
 
-cJSON *gateway_event_create(int32_t op, int32_t seq, const char *type,
-                            cJSON *data_json);
+cJSON *gateway_event_create(int32_t op, int32_t seq, const char *type, cJSON *data_json);
 cJSON *gateway_event_update_presence(const UpdatePresenceData *data);
 cJSON *gateway_event_identify(const IdentifyEventData *data);
 cJSON *gateway_event_heartbeat(int32_t seq);

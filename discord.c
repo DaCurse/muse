@@ -4,8 +4,26 @@
 #include <stdlib.h>
 #include <string.h>
 
-bool gateway_event_parse(uint8_t *data, size_t length,
-                         GatewayEventPayload *out_payload) {
+#if 0
+const char *DiscordEmbedTypeStrings[] = {
+    [EMBED_TYPE_RICH] = "rich",
+    [EMBED_TYPE_IMAGE] = "image",
+    [EMBED_TYPE_VIDEO] = "video",
+    [EMBED_TYPE_GIFV] = "gifv",
+    [EMBED_TYPE_ARTICLE] = "article",
+    [EMBED_TYPE_LINK] = "link",
+};
+#endif
+
+const char *StatusTypeStrings[] = {
+    [STATUS_ONLINE] = "online",
+    [STATUS_DND] = "dnd",
+    [STATUS_IDLE] = "idle",
+    [STATUS_INVISIBLE] = "invisible",
+    [STATUS_OFFLINE] = "offline",
+};
+
+bool gateway_event_parse(uint8_t *data, size_t length, GatewayEventPayload *out_payload) {
     bool success = false;
     cJSON *payload_json = NULL;
     const cJSON *op = NULL;
@@ -35,9 +53,8 @@ bool gateway_event_parse(uint8_t *data, size_t length,
     out_payload->op = (int)op->valueint;
     out_payload->d_json = event_data ? cJSON_Duplicate(event_data, true) : NULL;
     out_payload->s = cJSON_IsNumber(seq) ? (int)seq->valueint : -1;
-    out_payload->t = cJSON_IsString(type) && (type->valuestring != NULL)
-                         ? strdup(type->valuestring)
-                         : NULL;
+    out_payload->t =
+        cJSON_IsString(type) && (type->valuestring != NULL) ? strdup(type->valuestring) : NULL;
     success = true;
 
 cleanup:
@@ -47,11 +64,9 @@ cleanup:
 }
 
 bool gateway_event_parse_hello(const cJSON *data, HelloEventData *out_data) {
-    const cJSON *heartbeat_interval =
-        cJSON_GetObjectItemCaseSensitive(data, "heartbeat_interval");
+    const cJSON *heartbeat_interval = cJSON_GetObjectItemCaseSensitive(data, "heartbeat_interval");
     if (!cJSON_IsNumber(heartbeat_interval)) {
-        fprintf(stderr,
-                "Invalid/missing 'heartbeat_interval' in Hello event data\n");
+        fprintf(stderr, "Invalid/missing 'heartbeat_interval' in Hello event data\n");
         return false;
     }
 
@@ -59,8 +74,7 @@ bool gateway_event_parse_hello(const cJSON *data, HelloEventData *out_data) {
     return true;
 }
 
-cJSON *gateway_event_create(int32_t op, int32_t seq, const char *type,
-                            cJSON *data_json) {
+cJSON *gateway_event_create(int32_t op, int32_t seq, const char *type, cJSON *data_json) {
     cJSON *payload_json = NULL;
 
     payload_json = cJSON_CreateObject();
@@ -171,8 +185,7 @@ cJSON *gateway_event_update_presence(const UpdatePresenceData *data) {
 
     d_json = cJSON_CreateObject();
     if (!d_json) {
-        fprintf(stderr,
-                "Failed to create 'd' object for Update Presence payload\n");
+        fprintf(stderr, "Failed to create 'd' object for Update Presence payload\n");
         goto cleanup;
     }
 
@@ -182,8 +195,9 @@ cJSON *gateway_event_update_presence(const UpdatePresenceData *data) {
 
     activities_json = cJSON_CreateArray();
     if (!activities_json) {
-        fprintf(stderr, "Failed to create 'activities' array for Update "
-                        "Presence payload\n");
+        fprintf(stderr,
+                "Failed to create 'activities' array for Update "
+                "Presence payload\n");
         goto cleanup;
     }
 
@@ -226,14 +240,12 @@ cJSON *gateway_event_identify(const IdentifyEventData *data) {
 
     properties_json = cJSON_CreateObject();
     if (!properties_json) {
-        fprintf(stderr,
-                "Failed to create 'properties' object for Identify payload\n");
+        fprintf(stderr, "Failed to create 'properties' object for Identify payload\n");
         goto cleanup;
     }
 
     cJSON_AddStringToObject(properties_json, "os", data->properties.os);
-    cJSON_AddStringToObject(properties_json, "browser",
-                            data->properties.browser);
+    cJSON_AddStringToObject(properties_json, "browser", data->properties.browser);
     cJSON_AddStringToObject(properties_json, "device", data->properties.device);
 
     cJSON_AddItemToObject(d_json, "properties", properties_json);
@@ -242,9 +254,7 @@ cJSON *gateway_event_identify(const IdentifyEventData *data) {
     if (data->presence) {
         presence_json = gateway_event_update_presence(data->presence);
         if (!presence_json) {
-            fprintf(
-                stderr,
-                "Failed to create 'presence' object for Identify payload\n");
+            fprintf(stderr, "Failed to create 'presence' object for Identify payload\n");
             goto cleanup;
         }
         cJSON_AddItemToObject(d_json, "presence", presence_json);
@@ -270,7 +280,9 @@ cleanup:
 }
 
 cJSON *gateway_event_heartbeat(int32_t seq) {
-    return gateway_event_create(SEND_OPCODE_HEARTBEAT, -1, NULL,
+    return gateway_event_create(SEND_OPCODE_HEARTBEAT,
+                                -1,
+                                NULL,
                                 seq == -1 ? NULL : cJSON_CreateNumber(seq));
 }
 

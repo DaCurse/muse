@@ -5,3 +5,8 @@ UseTab: Never
 InsertNewlineAtEOF: true
 KeepEmptyLinesAtEOF: true
 AlignConsecutiveBitFields: true
+BinPackArguments: false
+BinPackParameters: false
+BinPackLongBracedList: false
+AllowAllArgumentsOnNextLine: false
+ColumnLimit: 100

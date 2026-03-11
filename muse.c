@@ -52,33 +52,27 @@ typedef struct {
     char *channel_id;
 } MusicLinkContext;
 
-typedef struct {
-    MusicPlatform platform;
-    const char *name;
-    char *url;
-} PlatformMapping;
-
 void on_music_link_fetched(MusicLinks links, void *user_data) {
+    static const char *platform_names[] = {
+        [PLATFORM_SPOTIFY] = "Spotify",
+        [PLATFORM_YOUTUBE] = "YouTube",
+        [PLATFORM_APPLE_MUSIC] = "Apple Music",
+        [PLATFORM_TIDAL] = "Tidal",
+        [PLATFORM_SOUNDCLOUD] = "SoundCloud",
+    };
+
     MusicLinkContext *ctx = (MusicLinkContext *)user_data;
     MuseBot *bot = ctx->bot;
     const char *channel_id = ctx->channel_id;
 
-    PlatformMapping platforms[] = {
-        {PLATFORM_SPOTIFY, "Spotify", links.data->spotify_url},
-        {PLATFORM_YOUTUBE, "YouTube", links.data->youtube_url},
-        {PLATFORM_APPLE_MUSIC, "Apple Music", links.data->apple_music_url},
-        {PLATFORM_TIDAL, "Tidal", links.data->tidal_url},
-        {PLATFORM_SOUNDCLOUD, "SoundCloud", links.data->soundcloud_url},
-    };
-
-    DiscordEmbedField fields[sizeof(platforms) / sizeof(platforms[0])] = {0};
+    DiscordEmbedField fields[PLATFORM_COUNT] = {0};
     int field_count = 0;
 
-    for (size_t i = 0; i < sizeof(platforms) / sizeof(platforms[0]); i++) {
-        // Skip the original platform and any platforms we don't have links for
-        if (platforms[i].url && links.original_platform != platforms[i].platform) {
-            fields[field_count].name = platforms[i].name;
-            fields[field_count].value = platforms[i].url;
+    for (size_t i = 0; i < PLATFORM_COUNT; i++) {
+        const char *url = links.data->urls[i];
+        if (url && links.original_platform != i) {
+            fields[field_count].name = platform_names[i];
+            fields[field_count].value = url;
             fields[field_count].inline_field = false;
             field_count++;
         }
@@ -93,8 +87,7 @@ void on_music_link_fetched(MusicLinks links, void *user_data) {
     if (field_count > 0) {
         embed.title = "Music Links";
         embed.type = "rich";
-        embed.description =
-            "Here are the music links I found on other platforms:";
+        embed.description = "Here are the music links I found on other platforms:";
         embed.color = 0x35556e;
         embed.thumbnail = thumbnail;
 
@@ -120,18 +113,17 @@ void on_music_link_fetched(MusicLinks links, void *user_data) {
         };
         bot_rest_send_message(bot, channel_id, &message);
     } else {
-	printf("YouTube link with no results detected, skipping sending message.\n");
+        printf("YouTube link with no results detected, skipping sending "
+               "message.\n");
     }
 
     free(ctx->channel_id);
     free(ctx);
 }
 
-void handle_music_link(MuseBot *bot, const char *channel_id,
-                       const char *music_url) {
+void handle_music_link(MuseBot *bot, const char *channel_id, const char *music_url) {
 
-    MusicLinkContext *ctx =
-        (MusicLinkContext *)malloc(sizeof(MusicLinkContext));
+    MusicLinkContext *ctx = (MusicLinkContext *)malloc(sizeof(MusicLinkContext));
     if (!ctx) {
         fprintf(stderr, "Failed to allocate music link context");
         return;
@@ -154,16 +146,13 @@ cleanup_ctx:
     free(ctx);
 }
 
-void on_bot_message_create(MuseBot *bot, const char *event_name,
-                           const cJSON *data_json) {
+void on_bot_message_create(MuseBot *bot, const char *event_name, const cJSON *data_json) {
     (void)event_name;
 
     // TODO: Bot should parse this for us and pass a struct in the callback
-    const cJSON *author_json =
-        cJSON_GetObjectItemCaseSensitive(data_json, "author");
+    const cJSON *author_json = cJSON_GetObjectItemCaseSensitive(data_json, "author");
 
-    const cJSON *author_id_json =
-        cJSON_GetObjectItemCaseSensitive(author_json, "id");
+    const cJSON *author_id_json = cJSON_GetObjectItemCaseSensitive(author_json, "id");
     if (!cJSON_IsString(author_id_json))
         return;
 
@@ -172,10 +161,8 @@ void on_bot_message_create(MuseBot *bot, const char *event_name,
         return;
     }
 
-    const cJSON *content_json =
-        cJSON_GetObjectItemCaseSensitive(data_json, "content");
-    const cJSON *channel_id_json =
-        cJSON_GetObjectItemCaseSensitive(data_json, "channel_id");
+    const cJSON *content_json = cJSON_GetObjectItemCaseSensitive(data_json, "content");
+    const cJSON *channel_id_json = cJSON_GetObjectItemCaseSensitive(data_json, "channel_id");
 
     if (!cJSON_IsString(content_json) || !cJSON_IsString(channel_id_json))
         return;
@@ -185,15 +172,15 @@ void on_bot_message_create(MuseBot *bot, const char *event_name,
 
     char *music_url = NULL;
     if (is_music_link(content, NULL, &music_url)) {
-        printf("Detected music link '%s' in channel %s by user %s\n", music_url,
-               channel_id, author_id_json->valuestring);
+        printf("Detected music link '%s' in channel %s by user %s\n",
+               music_url,
+               channel_id,
+               author_id_json->valuestring);
         handle_music_link(bot, channel_id, music_url);
         free(music_url);
     } else if (strlen(content) >= strlen(CMD_CACHE_SUMMARY) &&
-               strncmp(content, CMD_CACHE_SUMMARY, strlen(CMD_CACHE_SUMMARY)) ==
-                   0) {
-        char *summary_buffer =
-            calloc(CMD_CACHE_SUMMARY_BUFFER_SIZE, sizeof(*summary_buffer));
+               strncmp(content, CMD_CACHE_SUMMARY, strlen(CMD_CACHE_SUMMARY)) == 0) {
+        char *summary_buffer = calloc(CMD_CACHE_SUMMARY_BUFFER_SIZE, sizeof(*summary_buffer));
         if (!summary_buffer) {
             fprintf(stderr, "Failed to allocate cache summary buffer\n");
             return;
@@ -232,6 +219,11 @@ void handle_signal(int sig) {
 }
 
 int main() {
+    if (!links_init()) {
+        fprintf(stderr, "Error: failed to compile regular expressions");
+        return 1;
+    }
+
     if (!ISATTY(FILENO(stdout))) {
         setvbuf(stdout, NULL, _IOLBF, 0);
     }
@@ -268,6 +260,7 @@ int main() {
     bot_destroy(&bot);
     transport_destroy(&ts);
     cache_destroy();
+    links_destroy();
 
     return 0;
 }

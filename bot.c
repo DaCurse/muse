@@ -26,8 +26,7 @@ static const char *format_url(const char *fmt, ...) {
     memcpy(url_buffer, API_BASE_URL, base_url_len);
 
     va_start(ap, fmt);
-    int n = vsnprintf(url_buffer + base_url_len,
-                      sizeof(url_buffer) - base_url_len, fmt, ap);
+    int n = vsnprintf(url_buffer + base_url_len, sizeof(url_buffer) - base_url_len, fmt, ap);
     va_end(ap);
 
     if (n < 0 || (size_t)n >= sizeof(url_buffer) - base_url_len) {
@@ -47,8 +46,11 @@ static uint64_t get_now_ms(void) {
 #endif
 }
 
-void bot_init(MuseBot *bot, MuseTransport *ts, const char *token,
-              int32_t intents, BotEventCallbacks callbacks) {
+void bot_init(MuseBot *bot,
+              MuseTransport *ts,
+              const char *token,
+              int32_t intents,
+              BotEventCallbacks callbacks) {
     bot->ts = ts;
     bot->token = token;
     bot->intents = intents;
@@ -170,8 +172,7 @@ static void bot_handle_hello(MuseBot *bot, const cJSON *data_json) {
         return;
     }
 
-    printf("Received HELLO, heartbeat interval: %d ms\n",
-           hello_data.heartbeat_interval);
+    printf("Received HELLO, heartbeat interval: %d ms\n", hello_data.heartbeat_interval);
     bot->heartbeat_interval_ms = hello_data.heartbeat_interval;
     bot->next_heartbeat_ms = get_now_ms() + bot->heartbeat_interval_ms;
     bot_send_heartbeat(bot);
@@ -185,15 +186,15 @@ static void bot_handle_hello(MuseBot *bot, const cJSON *data_json) {
 
 static void bot_handle_invalid_session(MuseBot *bot, const cJSON *data_json) {
     bool resumable = data_json && cJSON_IsTrue(data_json);
-    printf("Received INVALID_SESSION (Resumable: %s)\n",
-           resumable ? "true" : "false");
+    printf("Received INVALID_SESSION (Resumable: %s)\n", resumable ? "true" : "false");
 
     if (resumable && bot->session_id != NULL) {
         bot_send_resume(bot);
     } else {
         if (bot->session_id == NULL) {
-            fprintf(stderr, "FATAL: Gateway rejected initial connection. Check "
-                            "TOKEN/INTENTS.\n");
+            fprintf(stderr,
+                    "FATAL: Gateway rejected initial connection. Check "
+                    "TOKEN/INTENTS.\n");
             bot->is_running = false;
             transport_ws_close(bot->ts);
         } else {
@@ -225,8 +226,7 @@ static void bot_handle_ready(MuseBot *bot, const cJSON *data_json) {
         printf("Bot User ID: %s\n", bot->user_id);
     }
 
-    cJSON *gateway_url_json =
-        cJSON_GetObjectItem(data_json, "resume_gateway_url");
+    cJSON *gateway_url_json = cJSON_GetObjectItem(data_json, "resume_gateway_url");
     if (gateway_url_json && cJSON_IsString(gateway_url_json)) {
         // Skip updating gateway url for now
         // bot_set_gateway_url(bot, gateway_url_json->valuestring);
@@ -234,8 +234,7 @@ static void bot_handle_ready(MuseBot *bot, const cJSON *data_json) {
     }
 }
 
-static void handle_dispatch_event(MuseBot *bot, const char *event_name,
-                                  const cJSON *data_json) {
+static void handle_dispatch_event(MuseBot *bot, const char *event_name, const cJSON *data_json) {
     if (strcmp(event_name, "READY") == 0) {
         bot_handle_ready(bot, data_json);
         if (bot->callbacks.on_ready) {
@@ -251,8 +250,7 @@ static void handle_dispatch_event(MuseBot *bot, const char *event_name,
     }
 }
 
-void bot_handle_gateway_event(MuseBot *bot,
-                              const GatewayEventPayload *payload) {
+void bot_handle_gateway_event(MuseBot *bot, const GatewayEventPayload *payload) {
     if (payload->s != -1)
         bot->last_seq = payload->s;
 
@@ -286,8 +284,7 @@ static void on_done(HTTPResponse *res, void *user_data) {
     (void)user_data;
 
     if (res->result != CURLE_OK) {
-        fprintf(stderr, "REST request failed: %s\n",
-                curl_easy_strerror(res->result));
+        fprintf(stderr, "REST request failed: %s\n", curl_easy_strerror(res->result));
         return;
     }
 
@@ -297,11 +294,11 @@ static void on_done(HTTPResponse *res, void *user_data) {
     }
 
     printf("REST request succeeded with status %ld, response length: %zu\n",
-           res->status, res->length);
+           res->status,
+           res->length);
 }
 
-static void bot_rest_send_json(MuseBot *bot, const char *url,
-                               const cJSON *body_json) {
+static void bot_rest_send_json(MuseBot *bot, const char *url, const cJSON *body_json) {
     char *body_str = cJSON_PrintUnformatted(body_json);
     if (!body_str) {
         fprintf(stderr, "Failed to serialize JSON body for REST request\n");
@@ -311,14 +308,18 @@ static void bot_rest_send_json(MuseBot *bot, const char *url,
     printf("Sending REST POST to %s with body: %s\n", url, body_str);
 
     char auth_header[256];
-    snprintf(auth_header, sizeof(auth_header), "Authorization: Bot %s",
-             bot->token);
+    snprintf(auth_header, sizeof(auth_header), "Authorization: Bot %s", bot->token);
     struct curl_slist *headers = NULL;
     headers = curl_slist_append(headers, auth_header);
 
-    if (!transport_http_post(bot->ts, url, (const uint8_t *)body_str,
-                             strlen(body_str), "application/json", headers,
-                             on_done, bot)) {
+    if (!transport_http_post(bot->ts,
+                             url,
+                             (const uint8_t *)body_str,
+                             strlen(body_str),
+                             "application/json",
+                             headers,
+                             on_done,
+                             bot)) {
         fprintf(stderr, "Failed to send HTTP POST request\n");
     }
 
@@ -326,11 +327,11 @@ static void bot_rest_send_json(MuseBot *bot, const char *url,
     free(body_str);
 }
 
-void bot_rest_send_message(MuseBot *bot, const char *channel_id,
+void bot_rest_send_message(MuseBot *bot,
+                           const char *channel_id,
                            const DiscordCreateMessage *message) {
     cJSON *message_json = rest_create_message(message);
-    bot_rest_send_json(bot, format_url("/channels/%s/messages", channel_id),
-                       message_json);
+    bot_rest_send_json(bot, format_url("/channels/%s/messages", channel_id), message_json);
     cJSON_Delete(message_json);
 }
 

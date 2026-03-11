@@ -8,25 +8,24 @@
 
 #define BUFFER_DEFAULT_CAPACITY (16384)
 
-#define buffer_append(buffer, chunk, chunk_size)                               \
-    do {                                                                       \
-        if ((buffer)->length + chunk_size > (buffer)->capacity) {              \
-            size_t new_capacity = (buffer)->capacity == 0                      \
-                                      ? BUFFER_DEFAULT_CAPACITY                \
-                                      : (buffer)->capacity;                    \
-            while ((buffer)->length + chunk_size > new_capacity) {             \
-                new_capacity *= 2;                                             \
-            }                                                                  \
-            uint8_t *ptr = realloc((buffer)->data, new_capacity);              \
-            if (!ptr) {                                                        \
-                fprintf(stderr, "error: out of memory");                       \
-                exit(1);                                                       \
-            }                                                                  \
-            (buffer)->data = ptr;                                              \
-            (buffer)->capacity = new_capacity;                                 \
-        }                                                                      \
-        memcpy(&((buffer)->data[(buffer)->length]), chunk, chunk_size);        \
-        (buffer)->length += chunk_size;                                        \
+#define buffer_append(buffer, chunk, chunk_size)                                                   \
+    do {                                                                                           \
+        if ((buffer)->length + chunk_size > (buffer)->capacity) {                                  \
+            size_t new_capacity =                                                                  \
+                (buffer)->capacity == 0 ? BUFFER_DEFAULT_CAPACITY : (buffer)->capacity;            \
+            while ((buffer)->length + chunk_size > new_capacity) {                                 \
+                new_capacity *= 2;                                                                 \
+            }                                                                                      \
+            uint8_t *ptr = realloc((buffer)->data, new_capacity);                                  \
+            if (!ptr) {                                                                            \
+                fprintf(stderr, "error: out of memory");                                           \
+                exit(1);                                                                           \
+            }                                                                                      \
+            (buffer)->data = ptr;                                                                  \
+            (buffer)->capacity = new_capacity;                                                     \
+        }                                                                                          \
+        memcpy(&((buffer)->data[(buffer)->length]), chunk, chunk_size);                            \
+        (buffer)->length += chunk_size;                                                            \
     } while (0);
 
 #define CURLOPT_CONNECT_ONLY_HEADERS (2L)
@@ -53,8 +52,7 @@ static int timer_callback(CURLM *multi, long timeout_ms, void *userp) {
     return 0;
 }
 
-int socket_callback(CURL *curl, curl_socket_t socket, int action, void *userp,
-                    void *socketp) {
+int socket_callback(CURL *curl, curl_socket_t socket, int action, void *userp, void *socketp) {
     (void)curl;
 
     MuseTransport *ts = (MuseTransport *)userp;
@@ -79,12 +77,10 @@ int socket_callback(CURL *curl, curl_socket_t socket, int action, void *userp,
         curl_multi_assign(ts->multi, socket, ctx);
     }
 
-    ev.events = (action & CURL_POLL_IN ? EPOLLIN : 0) |
-                (action & CURL_POLL_OUT ? EPOLLOUT : 0);
+    ev.events = (action & CURL_POLL_IN ? EPOLLIN : 0) | (action & CURL_POLL_OUT ? EPOLLOUT : 0);
     ev.data.ptr = ctx;
 
-    if (epoll_ctl(ts->epfd, EPOLL_CTL_ADD, socket, &ev) == -1 &&
-        errno == EEXIST) {
+    if (epoll_ctl(ts->epfd, EPOLL_CTL_ADD, socket, &ev) == -1 && errno == EEXIST) {
         epoll_ctl(ts->epfd, EPOLL_CTL_MOD, socket, &ev);
     }
 
@@ -111,8 +107,7 @@ static void handle_multi_messages(MuseTransport *ts) {
                 if (msg->data.result == CURLE_OK) {
                     ts->ws_handshake_done = true;
                 } else {
-                    fprintf(stderr, "WebSocket Disconnected/Error: %d\n",
-                            msg->data.result);
+                    fprintf(stderr, "WebSocket Disconnected/Error: %d\n", msg->data.result);
                     transport_ws_close(ts);
                 }
             }
@@ -128,8 +123,7 @@ static void handle_multi_messages(MuseTransport *ts) {
                     res.data = ctx->data;
                     res.length = ctx->length;
 
-                    curl_easy_getinfo(msg->easy_handle, CURLINFO_RESPONSE_CODE,
-                                      &res.status);
+                    curl_easy_getinfo(msg->easy_handle, CURLINFO_RESPONSE_CODE, &res.status);
 
                     if (ctx->on_done) {
                         ctx->on_done(&res, ctx->user_data);
@@ -145,8 +139,7 @@ static void handle_multi_messages(MuseTransport *ts) {
     }
 }
 
-void transport_init(MuseTransport *ts, const char *user_agent, WSCallbacks cbs,
-                    void *user_data) {
+void transport_init(MuseTransport *ts, const char *user_agent, WSCallbacks cbs, void *user_data) {
     ts->multi = curl_multi_init();
     ts->epfd = epoll_create1(0);
     ts->user_agent = user_agent;
@@ -167,8 +160,7 @@ static void drain_ws_messages(MuseTransport *ts) {
     char chunk[4096];
 
     for (;;) {
-        CURLcode res =
-            curl_ws_recv(ts->ws_easy, chunk, sizeof(chunk), &rlen, &meta);
+        CURLcode res = curl_ws_recv(ts->ws_easy, chunk, sizeof(chunk), &rlen, &meta);
 
         if (res == CURLE_AGAIN) {
             break;
@@ -191,7 +183,8 @@ static void drain_ws_messages(MuseTransport *ts) {
         // https://curl.se/libcurl/c/curl_ws_meta.html#CURLWSCONT
         if (is_data && !is_cont && meta->bytesleft == 0) {
             if (ts->ws_callbacks.on_message && ts->current_message.length > 0) {
-                ts->ws_callbacks.on_message(ts, ts->current_message.data,
+                ts->ws_callbacks.on_message(ts,
+                                            ts->current_message.data,
                                             ts->current_message.length);
             }
             ts->current_message.length = 0;
@@ -207,26 +200,23 @@ void transport_poll(MuseTransport *ts, int64_t default_timeout_ms) {
         wait_ms = 1;
 
     struct epoll_event events[16];
-    int num_fds = epoll_wait(
-        ts->epfd, events, sizeof(events) / sizeof(events[0]), (int32_t)wait_ms);
+    int num_fds =
+        epoll_wait(ts->epfd, events, sizeof(events) / sizeof(events[0]), (int32_t)wait_ms);
 
     if (num_fds > 0) { // Convert epoll events to curl actions
         for (int i = 0; i < num_fds; i++) {
             SocketContext *ctx = (SocketContext *)events[i].data.ptr;
             int action = (events[i].events & EPOLLIN ? CURL_CSELECT_IN : 0) |
                          (events[i].events & EPOLLOUT ? CURL_CSELECT_OUT : 0);
-            curl_multi_socket_action(ts->multi, ctx->sockfd, action,
-                                     &ts->running_handles);
+            curl_multi_socket_action(ts->multi, ctx->sockfd, action, &ts->running_handles);
         }
     } else { // epoll timeout handling
-        curl_multi_socket_action(ts->multi, CURL_SOCKET_TIMEOUT, 0,
-                                 &ts->running_handles);
+        curl_multi_socket_action(ts->multi, CURL_SOCKET_TIMEOUT, 0, &ts->running_handles);
     }
 
     // Handle multi messages
     handle_multi_messages(ts);
-    curl_multi_socket_action(ts->multi, CURL_SOCKET_TIMEOUT, 0,
-                             &ts->running_handles);
+    curl_multi_socket_action(ts->multi, CURL_SOCKET_TIMEOUT, 0, &ts->running_handles);
 
     // Fire websocket on connect once
     if (ts->ws_handshake_done && !ts->ws_on_connect_fired) {
@@ -250,8 +240,7 @@ void transport_ws_open(MuseTransport *ts, const char *url) {
     CURL *ws_easy = curl_easy_init();
     curl_easy_setopt(ws_easy, CURLOPT_URL, url);
     curl_easy_setopt(ws_easy, CURLOPT_USERAGENT, ts->user_agent);
-    curl_easy_setopt(ws_easy, CURLOPT_CONNECT_ONLY,
-                     CURLOPT_CONNECT_ONLY_HEADERS);
+    curl_easy_setopt(ws_easy, CURLOPT_CONNECT_ONLY, CURLOPT_CONNECT_ONLY_HEADERS);
     // Set to NULL to not confuse with request handles
     curl_easy_setopt(ws_easy, CURLOPT_PRIVATE, NULL);
 
@@ -259,8 +248,7 @@ void transport_ws_open(MuseTransport *ts, const char *url) {
     ts->ws_easy = ws_easy;
 
     // Kickstart the connection process
-    curl_multi_socket_action(ts->multi, CURL_SOCKET_TIMEOUT, 0,
-                             &ts->running_handles);
+    curl_multi_socket_action(ts->multi, CURL_SOCKET_TIMEOUT, 0, &ts->running_handles);
 }
 
 void transport_ws_close(MuseTransport *t) {
@@ -280,8 +268,7 @@ void transport_ws_close(MuseTransport *t) {
     }
 }
 
-CURLcode transport_ws_send(MuseTransport *ts, const uint8_t *data,
-                           size_t length) {
+CURLcode transport_ws_send(MuseTransport *ts, const uint8_t *data, size_t length) {
     if (!ts->ws_handshake_done)
         return CURLE_COULDNT_CONNECT;
 
@@ -295,15 +282,13 @@ CURLcode transport_ws_send_json(MuseTransport *ts, const cJSON *data) {
         return CURLE_FAILED_INIT;
     }
 
-    CURLcode res =
-        transport_ws_send(ts, (const uint8_t *)json_str, strlen(json_str));
+    CURLcode res = transport_ws_send(ts, (const uint8_t *)json_str, strlen(json_str));
     free(json_str);
 
     return res;
 }
 
-static size_t http_write_callback(void *data, size_t size, size_t nmemb,
-                                  void *userp) {
+static size_t http_write_callback(void *data, size_t size, size_t nmemb, void *userp) {
     size_t realsize = size * nmemb;
     RequestContext *ctx = (RequestContext *)userp;
 
@@ -316,17 +301,12 @@ static size_t http_write_callback(void *data, size_t size, size_t nmemb,
 }
 
 void transport_url_encode(const char *input, char *output, size_t output_size) {
-    CURL *curl = curl_easy_init();
-    if (curl) {
-        char *encoded = curl_easy_escape(curl, input, 0);
-        snprintf(output, output_size, "%s", encoded);
-        curl_free(encoded);
-        curl_easy_cleanup(curl);
-    }
+    char *encoded = curl_easy_escape(NULL, input, 0);
+    snprintf(output, output_size, "%s", encoded);
+    curl_free(encoded);
 }
 
-bool transport_http_get(MuseTransport *ts, const char *url,
-                        HTTPCallback on_done, void *user_data) {
+bool transport_http_get(MuseTransport *ts, const char *url, HTTPCallback on_done, void *user_data) {
     CURL *easy = curl_easy_init();
     if (!easy) {
         fprintf(stderr, "Failed to initialize CURL\n");
@@ -360,11 +340,14 @@ cleanup_curl:
     return false;
 }
 
-bool transport_http_post(MuseTransport *ts, const char *url,
-                         const uint8_t *body, size_t content_length,
+bool transport_http_post(MuseTransport *ts,
+                         const char *url,
+                         const uint8_t *body,
+                         size_t content_length,
                          const char *content_type,
                          const struct curl_slist *extra_headers,
-                         HTTPCallback on_done, void *user_data) {
+                         HTTPCallback on_done,
+                         void *user_data) {
     CURL *easy = curl_easy_init();
     if (!easy) {
         fprintf(stderr, "Failed to initialize CURL\n");

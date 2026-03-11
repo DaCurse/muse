@@ -14,8 +14,7 @@
 
 typedef struct MuseBot MuseBot;
 
-typedef void (*DispatchEventHandler)(MuseBot *bot, const char *event_name,
-                                     const cJSON *data_json);
+typedef void (*DispatchEventHandler)(MuseBot *bot, const char *event_name, const cJSON *data_json);
 
 typedef struct {
     DispatchEventHandler on_ready;
@@ -41,15 +40,19 @@ typedef struct MuseBot {
     BotEventCallbacks callbacks;
 } MuseBot;
 
-void bot_init(MuseBot *bot, MuseTransport *ts, const char *token,
-              int32_t intents, BotEventCallbacks callbacks);
+void bot_init(MuseBot *bot,
+              MuseTransport *ts,
+              const char *token,
+              int32_t intents,
+              BotEventCallbacks callbacks);
 void bot_set_gateway_url(MuseBot *bot, const char *url);
 void bot_tick(MuseBot *bot);
 
 // returns True if the event was DISPATCH, letting the caller handle it
 void bot_handle_gateway_event(MuseBot *bot, const GatewayEventPayload *payload);
 
-void bot_rest_send_message(MuseBot *bot, const char *channel_id,
+void bot_rest_send_message(MuseBot *bot,
+                           const char *channel_id,
                            const DiscordCreateMessage *message);
 
 void bot_destroy(MuseBot *bot);

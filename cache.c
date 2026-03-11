@@ -7,8 +7,7 @@
 #define FNV_64_PRIME (1099511628211ULL)
 #define FNV_64_OFFSET_BASIS (14695981039346656037ULL)
 
-static_assert((CACHE_SIZE & (CACHE_SIZE - 1)) == 0,
-              "CACHE_SIZE must be a power of 2");
+static_assert((CACHE_SIZE & (CACHE_SIZE - 1)) == 0, "CACHE_SIZE must be a power of 2");
 
 static CacheSlot cache[CACHE_SIZE] = {0};
 
@@ -65,9 +64,12 @@ void cache_summary(char *buffer, size_t buffer_size) {
     }
 
     size_t pos = 0;
-    pos += snprintf(buffer + pos, buffer_size - pos,
+    pos += snprintf(buffer + pos,
+                    buffer_size - pos,
                     "```\nCache: %zu used, %zu empty (%u total, %.1f%% full)\n",
-                    used, CACHE_SIZE - used, CACHE_SIZE,
+                    used,
+                    CACHE_SIZE - used,
+                    CACHE_SIZE,
                     (used * 100.0) / CACHE_SIZE);
 
     if (used == 0) {
@@ -85,25 +87,27 @@ void cache_summary(char *buffer, size_t buffer_size) {
             continue;
 
         int links = 0;
-        if (cache[i].value->data->spotify_url)
-            links++;
-        if (cache[i].value->data->youtube_url)
-            links++;
-        if (cache[i].value->data->apple_music_url)
-            links++;
-        if (cache[i].value->data->tidal_url)
-            links++;
-        if (cache[i].value->data->soundcloud_url)
-            links++;
+        for (int j = 0; j < PLATFORM_COUNT; j++) {
+            if (cache[i].value->data->urls[j]) {
+                links++;
+            }
+        }
 
-        pos += snprintf(buffer + pos, buffer_size - pos, "[%zu] %016llx (%d links, %d refs)\n",
-                        i, (unsigned long long)cache[i].hash, links, cache[i].value->data->ref_count);
+        pos += snprintf(buffer + pos,
+                        buffer_size - pos,
+                        "[%zu] %016llx (%d links, %d refs)\n",
+                        i,
+                        (unsigned long long)cache[i].hash,
+                        links,
+                        cache[i].value->data->ref_count);
         shown++;
     }
 
     if (shown < used) {
-        pos += snprintf(buffer + pos, buffer_size - pos,
-                        "... +%zu more entries not shown\n", used - shown);
+        pos += snprintf(buffer + pos,
+                        buffer_size - pos,
+                        "... +%zu more entries not shown\n",
+                        used - shown);
     }
 
     snprintf(buffer + pos, buffer_size - pos, "```");
