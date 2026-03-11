@@ -106,7 +106,6 @@ bool is_music_link(const char *message, MusicPlatform *out_platform, char **out_
 }
 
 static void parse_music_links_response(cJSON *response_json, MusicLinksData *out_data) {
-
     static const char *platform_url_keys[] = {
         [PLATFORM_SPOTIFY] = "spotify",
         [PLATFORM_YOUTUBE] = "youtube",

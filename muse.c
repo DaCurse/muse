@@ -122,7 +122,6 @@ void on_music_link_fetched(MusicLinks links, void *user_data) {
 }
 
 void handle_music_link(MuseBot *bot, const char *channel_id, const char *music_url) {
-
     MusicLinkContext *ctx = (MusicLinkContext *)malloc(sizeof(MusicLinkContext));
     if (!ctx) {
         fprintf(stderr, "Failed to allocate music link context");
